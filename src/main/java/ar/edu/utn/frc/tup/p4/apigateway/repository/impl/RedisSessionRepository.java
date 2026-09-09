@@ -12,9 +12,9 @@ import reactor.core.publisher.Mono;
  *
  * <p>DEC-01 - fail-closed distinguiendo causa:
  * <ul>
- *   <li>key presente -> {@link EstadoSesion.Vigente}.</li>
- *   <li>key ausente -> {@link EstadoSesion.Ausente}.</li>
- *   <li>error de Redis -> {@link EstadoSesion.NoDisponible}, NO {@code Ausente}.
+ *   <li>key presente -> {@link SessionState.Active}.</li>
+ *   <li>key ausente -> {@link SessionState.Absent}.</li>
+ *   <li>error de Redis -> {@link SessionState.Unavailable}, NO {@code Absent}.
  *       Confundirlos es fail-open disfrazado de fail-closed: alguien con sesion
  *       perfectamente valida seria deslogueado solo porque Redis se cayo.</li>
  * </ul>
@@ -27,10 +27,10 @@ public class RedisSessionRepository implements SessionRepository {
     public RedisSessionRepository(ReactiveStringRedisTemplate redis) { this.redis = redis; }
 
     @Override
-    public Mono<EstadoSesion> findSid(String userId) {
+    public Mono<SessionState> findSid(String userId) {
         return redis.opsForValue().get("session:" + userId)
-                .map(sid -> (EstadoSesion) new EstadoSesion.Vigente(sid))
-                .defaultIfEmpty(new EstadoSesion.Ausente())
-                .onErrorResume(e -> Mono.just(new EstadoSesion.NoDisponible(e)));
+                .map(sid -> (SessionState) new SessionState.Active(sid))
+                .defaultIfEmpty(new SessionState.Absent())
+                .onErrorResume(e -> Mono.just(new SessionState.Unavailable(e)));
     }
 }

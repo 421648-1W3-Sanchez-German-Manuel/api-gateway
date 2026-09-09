@@ -20,7 +20,7 @@ import reactor.core.publisher.Mono;
  * un hipo corto de Redis se absorbe y un Redis caido se convierte en una
  * degradacion acotada, no en un corte total.
  *
- * <p>{@link EstadoSesion.NoDisponible} NO se cachea: cachear un error de
+ * <p>{@link SessionState.Unavailable} NO se cachea: cachear un error de
  * Redis por 3s convierte un hipo en una caida garantizada de 3s.
  */
 @Repository
@@ -28,7 +28,7 @@ import reactor.core.publisher.Mono;
 public class CachingSessionRepository implements SessionRepository {
 
     private final SessionRepository delegate;
-    private final Cache<String, EstadoSesion> cache;
+    private final Cache<String, SessionState> cache;
 
     public CachingSessionRepository(
             @Qualifier("redisSessionRepository") SessionRepository delegate,
@@ -41,15 +41,15 @@ public class CachingSessionRepository implements SessionRepository {
     }
 
     @Override
-    public Mono<EstadoSesion> findSid(String userId) {
-        EstadoSesion cacheado = cache.getIfPresent(userId);
+    public Mono<SessionState> findSid(String userId) {
+        SessionState cacheado = cache.getIfPresent(userId);
         if (cacheado != null) {
             return Mono.just(cacheado);
         }
         return delegate.findSid(userId).doOnNext(status -> {
-            // NoDisponible NO: cachear un fallo de Redis por 3s convierte un
+            // Unavailable NO: cachear un fallo de Redis por 3s convierte un
             // hipo en una caida garantizada de 3s.
-            if (!(status instanceof EstadoSesion.NoDisponible)) {
+            if (!(status instanceof SessionState.Unavailable)) {
                 cache.put(userId, status);
             }
         });

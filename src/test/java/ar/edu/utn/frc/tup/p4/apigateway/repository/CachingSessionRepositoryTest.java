@@ -1,7 +1,7 @@
 package ar.edu.utn.frc.tup.p4.apigateway.repository;
 
 import ar.edu.utn.frc.tup.p4.apigateway.config.properties.SessionCacheProperties;
-import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository.EstadoSesion;
+import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository.SessionState;
 import ar.edu.utn.frc.tup.p4.apigateway.repository.impl.CachingSessionRepository;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -30,7 +30,7 @@ class CachingSessionRepositoryTest {
     void dos_lecturas_seguidas_pegan_UNA_sola_vez_a_Redis() {
         AtomicInteger llamadas = new AtomicInteger();
         var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new EstadoSesion.Vigente("sid-1")); },
+                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Active("sid-1")); },
                 props);
 
         StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
@@ -40,13 +40,13 @@ class CachingSessionRepositoryTest {
     }
 
     @Test
-    void NO_cachea_el_estado_NoDisponible() {
+    void NO_cachea_el_estado_Unavailable() {
         // Caching a Redis failure for 3 s turns a hiccup into a guaranteed 3 s
         // outage. Only what could actually be read gets cached.
         AtomicInteger llamadas = new AtomicInteger();
         var cacheado = new CachingSessionRepository(
                 id -> { llamadas.incrementAndGet();
-                        return Mono.just(new EstadoSesion.NoDisponible(new RuntimeException("caido"))); },
+                        return Mono.just(new SessionState.Unavailable(new RuntimeException("caido"))); },
                 props);
 
         StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
@@ -56,12 +56,12 @@ class CachingSessionRepositoryTest {
     }
 
     @Test
-    void cachea_tambien_el_estado_Ausente() {
+    void cachea_tambien_el_estado_Absent() {
         // Un logout reciente es legitimo y frecuente: no hay por que pegarle a
         // Redis en cada request de una sesion ya cerrada.
         AtomicInteger llamadas = new AtomicInteger();
         var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new EstadoSesion.Ausente()); },
+                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Absent()); },
                 props);
 
         StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
@@ -74,7 +74,7 @@ class CachingSessionRepositoryTest {
     void cada_usuario_tiene_su_propia_entrada() {
         AtomicInteger llamadas = new AtomicInteger();
         var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new EstadoSesion.Vigente(id)); },
+                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Active(id)); },
                 props);
 
         StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
