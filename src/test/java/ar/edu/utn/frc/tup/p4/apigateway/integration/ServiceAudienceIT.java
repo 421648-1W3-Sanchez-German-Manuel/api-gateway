@@ -53,7 +53,7 @@ class ServiceAudienceIT extends AbstractGatewayTest {
         // GET /profile/{id}. That token carries NO aud, and it should not:
         // the filter only looks at type: service (DEC-36).
         UUID u = UUID.randomUUID();
-        redis.opsForValue().set("session:" + u, "sid-1").block();
+        seedSession(redis, u, "sid-1");
         cliente.get().uri("/api/users/profile/x")
                 .header("Authorization", "Bearer " + TokenFactory.persona(u, "sid-1"))
                 .exchange().expectStatus().isOk();

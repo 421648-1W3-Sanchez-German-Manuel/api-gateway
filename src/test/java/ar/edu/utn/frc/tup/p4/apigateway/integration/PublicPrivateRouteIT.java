@@ -14,7 +14,7 @@ class PublicPrivateRouteIT extends AbstractGatewayTest {
 
     /** The private routes go through SessionGuard: the sid has to be in Redis. */
     private String tokenDe(UUID u) {
-        redis.opsForValue().set("session:" + u, "sid-1").block();
+        seedSession(redis, u, "sid-1");
         return TokenFactory.persona(u, "sid-1");
     }
 

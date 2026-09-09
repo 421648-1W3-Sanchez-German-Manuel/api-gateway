@@ -19,7 +19,7 @@ class AccountStateGuardIT extends AbstractGatewayTest {
     @Autowired ReactiveStringRedisTemplate redis;
 
     private String tokenWithStatus(UUID u, String est, boolean pwd, boolean onb) {
-        redis.opsForValue().set("session:" + u, "sid-1").block();
+        seedSession(redis, u, "sid-1");
         return TokenFactory.persona(u, "sid-1",
                 b -> b.claim("est", est).claim("pwd", pwd).claim("onb", onb));
     }
@@ -79,7 +79,7 @@ class AccountStateGuardIT extends AbstractGatewayTest {
         // DEC-44 - DoD criterion #7d. This is the "old users-service against a
         // new gateway" case, which now fails legibly.
         UUID u = UUID.randomUUID();
-        redis.opsForValue().set("session:" + u, "sid-1").block();
+        seedSession(redis, u, "sid-1");
         String sinClaims = TokenFactory.persona(u, "sid-1",
                 b -> b.claim("est", null).claim("pwd", null).claim("onb", null));
 

@@ -17,7 +17,7 @@ class IdentityPropagationIT extends AbstractGatewayTest {
     @Autowired ReactiveStringRedisTemplate redis;
 
     private String tokenDe(UUID u) {
-        redis.opsForValue().set("session:" + u, "sid-1").block();
+        seedSession(redis, u, "sid-1");
         return TokenFactory.persona(u, "sid-1");
     }
 

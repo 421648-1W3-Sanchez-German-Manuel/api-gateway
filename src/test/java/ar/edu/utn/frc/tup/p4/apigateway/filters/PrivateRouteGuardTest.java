@@ -34,8 +34,12 @@ class PrivateRouteGuardTest {
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me").build());
         Mono<Void> resultado = guard.filter(ex, e -> Mono.empty());
         if (token != null) {
+            // Two-arg constructor: it is the ONLY one that leaves the token
+            // authenticated, and it is what JwtReactiveAuthenticationManager
+            // puts in the context in production. With the one-arg one the guard
+            // rejects everything and the test would be checking the wrong thing.
             resultado = resultado.contextWrite(ReactiveSecurityContextHolder
-                    .withAuthentication(new JwtAuthenticationToken(token)));
+                    .withAuthentication(new JwtAuthenticationToken(token, List.of())));
         }
         StepVerifier.create(resultado).verifyComplete();
         return (HttpStatus) ex.getResponse().getStatusCode();

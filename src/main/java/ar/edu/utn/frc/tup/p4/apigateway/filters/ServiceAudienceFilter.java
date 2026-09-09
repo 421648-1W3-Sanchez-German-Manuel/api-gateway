@@ -66,7 +66,7 @@ public class ServiceAudienceFilter implements GlobalFilter, Ordered {
 
     private Mono<Void> reject(ServerWebExchange exchange, String detalle) {
         return ProblemDetails.write(exchange, HttpStatus.FORBIDDEN,
-                ErrorTypes.AUDIENCIA_INVALIDA, "Audiencia invalida", detalle);
+                ErrorTypes.INVALID_AUDIENCE, "Audiencia invalida", detalle);
     }
 
     @Override
