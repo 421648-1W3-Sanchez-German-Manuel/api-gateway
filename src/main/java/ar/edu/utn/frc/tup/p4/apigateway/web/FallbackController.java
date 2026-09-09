@@ -24,8 +24,8 @@ public class FallbackController {
     @RequestMapping("/fallback/{serviceId}")
     public Mono<Void> fallback(@PathVariable String serviceId, ServerWebExchange exchange) {
         return ProblemDetails.withRetryAfter(exchange, HttpStatus.SERVICE_UNAVAILABLE,
-                ErrorTypes.SERVICIO_NO_DISPONIBLE, "Servicio no disponible",
-                "El servicio '" + serviceId + "' no esta respondiendo. Reintente en unos segundos.",
+                ErrorTypes.SERVICE_UNAVAILABLE, "Service unavailable",
+                "Service '" + serviceId + "' is not responding. Try again in a few seconds.",
                 Duration.ofSeconds(10));
     }
 }
