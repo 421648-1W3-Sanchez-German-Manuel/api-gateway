@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>ar.edu.utn.frc.tup.p4</groupId>
+  <artifactId>api-gateway</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>api-gateway</name>
+  <description>API Gateway del subsistema de Identidad y Usuarios (Tema 01)</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.release>21</maven.compiler.release>
+    <spring-boot.version>4.1.1</spring-boot.version>
+    <spring-cloud.version>2025.1.3</spring-cloud.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- ORDEN OBLIGATORIO: Boot PRIMERO. Si va despues, el BOM de Cloud
+           puede bajar spring-boot-dependencies por debajo de 4.1.1. -->
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- El starter RENOMBRADO. El viejo spring-cloud-starter-gateway sigue
+         existiendo pero apunta al modulo legacy. -->
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-circuitbreaker-reactor-resilience4j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <!-- REACTIVE: un cliente Redis bloqueante en un filtro de WebFlux bloquea
+         el event loop de Netty y tira el throughput del proceso entero. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+      <artifactId>caffeine</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-tracing-bridge-otel</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.projectreactor</groupId>
+      <artifactId>reactor-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>mockwebserver</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- @ServiceConnection vive aca: sin esto Testcontainers no cablea
+         automaticamente spring.data.redis.* al contenedor. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Testcontainers 2.x renombro el artefacto: en 1.x era `junit-jupiter`. -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.redis</groupId>
+      <artifactId>testcontainers-redis</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!--
+        -parameters es OBLIGATORIO. Lo agrega el parent POM de Spring Boot,
+        pero aca importamos el BOM en vez de heredar del parent, asi que hay
+        que ponerlo a mano. Sin el, cualquier @PathVariable / @RequestParam
+        sin nombre explicito tira 500 en runtime:
+        "Name for argument of type [String] not specified".
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgs>
+            <arg>-parameters</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>${spring-boot.version}</version>
+        <!--
+          La ejecucion `repackage` la declara el parent POM de Spring Boot.
+          Como aca se importa el BOM en vez de heredar del parent, hay que
+          declararla a mano: sin ella el jar queda PLANO, sin Main-Class ni
+          dependencias, y el contenedor muere con
+          "no main manifest attribute, in app.jar".
+          `mvn test` y `mvn verify` pasan igual: solo se nota al empaquetar.
+        -->
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!--
+        Sin esto los *IT NO CORREN: surefire solo toma *Test, y los criterios
+        de DoD que viven en tests de integracion se saltearian en silencio.
+        `mvn verify` corre unitarios + integracion; `mvn test`, solo unitarios.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <!--
+            OBLIGATORIO cuando esta la ejecucion `repackage` de arriba.
+            Failsafe corre por defecto contra el ARTEFACTO empaquetado, y
+            repackage lo convierte en un fat jar donde las clases quedan bajo
+            BOOT-INF/classes. El escaneo de paquetes de Spring no las ve y
+            TODAS las IT mueren con "Unable to find a @SpringBootConfiguration
+            by searching packages upwards from the test" — un mensaje que
+            manda a revisar los paquetes de los tests, donde no esta el error.
+            Apuntando a target/classes las IT corren contra las clases sueltas.
+          -->
+          <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

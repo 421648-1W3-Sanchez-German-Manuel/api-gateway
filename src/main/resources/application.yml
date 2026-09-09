@@ -1,0 +1,88 @@
+spring:
+  application:
+    name: api-gateway
+
+  # In WebFlux a request hops between threads several times, so the traceId that
+  # micrometer-tracing leaves in a ThreadLocal is gone by the time the logger
+  # runs. With `auto`, Reactor carries it across operators and the pattern can
+  # print it.
+  reactor:
+    context-propagation: auto
+
+gateway:
+  jwt:
+    expected-issuer: users-service      # DEC-07 - always validated (DEC-44)
+
+  session-cache:                        # DEC-25
+    ttl: 3s
+    max-size: 10000
+
+  routing:
+    # DEC-06 - the ONE source of the allowlist. AllowlistRouteLocator reads it
+    # to generate the routes, and the guards and ServiceAudienceFilter read it
+    # to decide. Adding a service is adding ONE line here.
+    allowlist:
+      - users-service
+      - echo-service
+    service-id-suffix: "-service"
+    path-prefix: "/api"
+
+  identity:
+    reserved-headers:
+      - X-Principal-Type
+      - X-User-Id
+      - X-Service-Id
+      - X-User-Roles
+      - X-Service-Scopes
+
+  rate-limit:
+    enabled: true
+    # DEC-24 - the auth route IS expensive and its bucket is keyed by IP.
+    expensive-routes:
+      - path: /api/users/public/auth/**
+        key: IP
+        capacity: ${RATE_LIMIT_AUTH_CAPACITY:600}
+        refill-per-minute: ${RATE_LIMIT_AUTH_REFILL:600}
+    trusted-proxies: []                 # DEC-24 - to resolve X-Forwarded-For
+
+# ---------------------------------------------------------------------------
+# Every lot adds its own block here. This file has ONE owner (see
+# TASK-ASSIGNMENT.md): send the block instead of committing it, or ten branches
+# collide in the same place.
+#
+#   spring.cloud.gateway  -> L7  (routing, the static JWKS route, fallback)
+#   spring.data.redis     -> L7  (session repository)
+#   gateway.cors          -> L9  (the only place in the subsystem with CORS)
+#   resilience4j          -> L10 (breaker, bulkhead, fallback)
+# ---------------------------------------------------------------------------
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true          # the gateway is the ONLY one that needs the registry
+  instance:
+    prefer-ip-address: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  # Without this the default sampling is 10%: nine out of ten requests have no
+  # active span and come out with no traceId. To be able to follow ANY request
+  # through the logs, everything is sampled.
+  tracing:
+    sampling:
+      probability: 1.0
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never

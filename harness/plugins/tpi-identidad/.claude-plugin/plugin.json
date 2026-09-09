@@ -1,0 +1,9 @@
+{
+  "name": "tpi-identidad",
+  "description": "Reglas y comandos del subsistema de Identidad y Usuarios: levantar el stack, correr la regresión, sacar códigos del outbox y respetar el contrato de la casa",
+  "version": "1.0.0",
+  "author": {
+    "name": "TPI · Tema 01 · TUP UTN FRC"
+  },
+  "keywords": ["tpi", "identidad", "api-gateway", "spring-boot"]
+}

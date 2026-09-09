@@ -1,0 +1,9 @@
+{
+  "name": "tpi-integracion",
+  "description": "Cómo integrar un microservicio detrás del API Gateway del Tema 01: headers de identidad, contrato de errores, tokens de servicio y test de conformidad",
+  "version": "1.0.0",
+  "author": {
+    "name": "TPI · Tema 01 · TUP UTN FRC"
+  },
+  "keywords": ["tpi", "integracion", "api-gateway", "identidad"]
+}
