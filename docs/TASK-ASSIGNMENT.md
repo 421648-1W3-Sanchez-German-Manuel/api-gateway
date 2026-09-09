@@ -89,6 +89,12 @@ beat one large one at the end.
 exhaustive. If you need something changed outside it, ask the owner — that is a
 thirty-second conversation and a fifteen-minute merge conflict avoided.
 
+**That includes when the plan itself tells you to.** A step that says to edit a
+file outside your list is a bug in the plan, not permission. Stop and report it:
+the answer is either that the file moves to the base, or that your lot gets its
+own copy — and either way it is a change to the assignment, not something to
+settle inside one branch. This has already happened once.
+
 **Three files belong to Ramiro alone:** `application.yml`, `pom.xml` and the
 `Dockerfile`. Everyone adds properties and dependencies eventually, and these
 are where ten branches collide. Send the block you need and it gets merged for
@@ -343,6 +349,8 @@ src/test/java/…/auth/RateLimitLoginIT.java
 src/test/java/…/auth/SingleSessionRefreshIT.java
 src/test/java/…/auth/LogoutIT.java
 src/test/java/…/auth/PasswordResetIT.java
+src/test/java/…/auth/TestOtpSpy.java
+src/test/java/…/auth/TestResetSpy.java
 ```
 
 **Why your lot matters:** it is the largest and the densest. Single session,
@@ -398,6 +406,7 @@ src/main/resources/legal/terms-v1.md
 src/test/java/…/users/RegistrationIT.java
 src/test/java/…/users/ActivationLinkIT.java
 src/test/java/…/users/WhitelistRequestIT.java
+src/test/java/…/users/TestActivationSpy.java
 ```
 
 **Why your lot matters:** it is the front door of the platform. Task U17 carries
