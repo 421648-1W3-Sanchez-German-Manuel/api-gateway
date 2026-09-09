@@ -65,8 +65,8 @@ Not everything can start at once. Dependencies:
 |---|---|---|
 | L1 | Del Lungo | L2 (token issuance), L3 (Redis, OTP, mail) |
 | L5 | Palacios | L3 (mail, ephemeral tokens) |
-| L8 | Sanchez German | L7 (session repository, `ProblemDetails`) |
-| L9 | Tahir | L7 (`ProblemDetails`) |
+| L8 | Sanchez German | L7 — sólo para correr sus dos IT: necesita el **bean** que implementa `SessionRepository` y el ruteo. Compila desde el día uno |
+| L9 | Tahir | L7 — sólo para las IT: necesita el ruteo por allowlist. Compila desde el día uno |
 
 **Wave 3 — needs Wave 2**
 
@@ -251,7 +251,7 @@ Trabajá en la rama lote-4-carignano. Seguí el plan tarea por tarea y paso por
 paso, sin adelantarte: cada tarea empieza por el test que falla y termina con su
 verificación.
 
-Antes de escribir código, leé completo el bloque de la regla de las exenciones
+Antes de write código, leé completo el bloque de la regla de las exenciones
 en la tarea U8 y explicame con tus palabras por qué un endpoint de salida se
 exime de los dos gates finos y no solo del propio.
 
@@ -273,20 +273,19 @@ Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
 src/main/java/…/config/AllowlistRouteLocator.java
 src/main/java/…/config/DiscoveryLocatorConfig.java
 src/main/java/…/config/RedisConfig.java
-src/main/java/…/web/ProblemDetails.java
 src/main/java/…/web/GatewayErrorAttributes.java
 src/main/java/…/web/FallbackController.java
 src/main/java/…/web/RouteNotFoundHandler.java
-src/main/java/…/repository/SessionRepository.java
 src/main/java/…/repository/impl/RedisSessionRepository.java
 src/main/java/…/repository/impl/CachingSessionRepository.java
 src/test/java/…/integration/DiscoveryAllowlistIT.java
-src/test/java/…/web/ProblemDetailsTest.java
 src/test/java/…/repository/CachingSessionRepositoryTest.java
 ```
 
-**Why your lot matters:** two other gateway lots build on your `ProblemDetails`
-and your session repository, so yours has to land first. Task G3 contains a trap
+**Why your lot matters:** `ProblemDetails` and the `SessionRepository` interface
+live in the base so nobody is blocked on compiling, but L8 and L9 cannot RUN a
+single integration test until your routing and your Redis beans are on `main`.
+Yours is what turns their code from written to verifiable. Task G3 contains a trap
 that produces a gateway which starts perfectly and answers 404 to everything —
 read it before you touch the routing.
 
@@ -303,7 +302,7 @@ Antes de empezar, leé el bloque sobre por qué las rutas dinámicas se generan 
 Java y no con el DiscoveryClient locator, y explicame por qué ese error no
 rompería el arranque.
 
-Los lotes L8 y L9 dependen de ProblemDetails y de SessionRepository: sus firmas
+Los lotes L8 y L9 dependen de tus beans: sus firmas
 son contrato, avisá antes de cambiarlas.
 
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
@@ -411,7 +410,7 @@ Trabajá en la rama lote-5-palacios. Seguí el plan tarea por tarea y paso por
 paso, sin adelantarte: cada tarea empieza por el test que falla y termina con su
 verificación.
 
-Antes de escribir el servicio de registro, leé las tres decisiones del paso 4 de
+Antes de write el servicio de registro, leé las tres decisiones del paso 4 de
 la tarea U17 y explicame por qué el enlace apunta al frontend y la activación es
 un POST.
 
@@ -462,7 +461,8 @@ Al terminar G7, verificá a mano que funciona de punta a punta: mandá un reques
 con un X-Request-Id conocido y comprobá que ese id aparece en la línea de log
 del Gateway. Que el pattern lo declare no alcanza: hay que verlo impreso.
 
-Tu lote consume ProblemDetails y SessionRepository (L7).
+ProblemDetails y SessionRepository ya estan en la base: compilas desde el dia
+uno. De L7 esperas los BEANS (ruteo y Redis) para que tus dos IT levanten.
 
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
@@ -509,7 +509,8 @@ En G11, el borrado de los cinco headers reservados tiene que aplicar también en
 las rutas públicas, y el test lo tiene que demostrar: es el caso que parece
 innecesario y es el más importante.
 
-Tu lote consume ProblemDetails (L7).
+ProblemDetails ya esta en la base. De L7 esperas el ruteo por allowlist para
+que tus IT no den 404.
 
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.

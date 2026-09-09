@@ -4,7 +4,7 @@
 **Componente:** `api-gateway` (Spring Cloud Gateway · WebFlux)
 **Fuente de verdad:** `manifiesto-api-gateway.html` (revisión v4 + parche v5) — LOCKEADO
 **Referencias cruzadas:** `manifiesto-users-service.html` (v5), `manifiesto-flujos.html` (v5), `jwt-jwks-redis-explicado.html` (anexo), `TUP_PIV_BE_PROPUESTA_ARQ.pdf`
-**Estado:** listo para generación de código. Las decisiones tomadas por el equipo para cerrar huecos de los manifiestos están en §14.0 (`DEC-01`…`DEC-28`, numeración compartida con `SPEC-users-service.md`); lo que sigue abierto está marcado `TODO` en el cuerpo y consolidado en §14.
+**Estado:** listo para generación de código. Las decisiones tomadas por el equipo para cerrar huecos de los manifiestos están en §14.0 (`DEC-01`…`DEC-28`, numeración compartida con `SPEC-users-service.md`); lo que sigue abierto está marcado `TODO` en el body y consolidado en §14.
 
 > **Instrucción para el agente de generación de código.**
 > Este documento es autocontenido: no hace falta volver a abrir los manifiestos HTML.
@@ -107,7 +107,7 @@ Spring Cloud      2025.1.3  "Oakwood"   ← ver TODO-01
 > **TODO-01 · Pin exacto del release train de Spring Cloud.**
 > El manifiesto (§12, DoD) dejaba *"fijar versión de Spring Boot / Spring Cloud"* como pendiente bloqueante. El equipo fijó **Spring Boot 4.1.1**; el train de Spring Cloud queda derivado, no dictado por el manifiesto.
 > Dato verificado: el train **2025.1.x (Oakwood)** es el que acompaña a Spring Boot 4.x — `2025.1.2` (11-jun-2026) declara compatibilidad con Spring Boot 4.1.0, y `2025.1.3` (20-ago-2026) es el último publicado, construido contra Boot 4.0.8.
-> **Acción para el agente:** usar `2025.1.3` como value inicial y **verificar el pin contra la [matriz oficial](https://spring.io/projects/spring-cloud/) antes del primer commit**. Si `mvn dependency:tree` muestra un downgrade de `spring-boot-dependencies` por debajo de 4.1.1, subir al primer `2025.1.x` que lo soporte. No inventar un train `2026.x`: al momento de escribir esta spec no existe uno publicado.
+> **Acción para el agente:** usar `2025.1.3` como value inicial y **verificar el pin contra la [matriz oficial](https://spring.io/projects/spring-cloud/) antes del primer commit**. Si `mvn dependency:tree` muestra un downgrade de `spring-boot-dependencies` por debajo de 4.1.1, subir al primer `2025.1.x` que lo soporte. No inventar un train `2026.x`: al momento de write esta spec no existe uno publicado.
 
 ### 3.2 `pom.xml` — dependencias
 
@@ -752,7 +752,7 @@ Todo request atraviesa esta cadena, en este orden.
 | Entrada | `ServerWebExchange` con (o sin) header `Authorization: Bearer <jwt>` |
 |---|---|
 | Salida OK | `SecurityContext` con un `JwtAuthenticationToken` poblado |
-| Salida error | **401** emitido por Spring Security, cuerpo `ProblemDetail` (§13) |
+| Salida error | **401** emitido por Spring Security, body `ProblemDetail` (§13) |
 
 **Qué valida, en orden:**
 
@@ -787,7 +787,7 @@ WARN JWT_RECHAZADO reason=claim-invalido claim=iss esperado=users-service recibi
 WARN JWT_RECHAZADO reason=claim-ausente  claim=est                                    requestId=<id>
 ```
 
-Esto es lo que convierte "todo devuelve 401 y no sé por qué" en diez segundos de `grep`. El **cuerpo** de la respuesta no lleva ese detalle: a un atacante no se le explica qué le faltó al token. Va solo al log.
+Esto es lo que convierte "todo devuelve 401 y no sé por qué" en diez segundos de `grep`. El **body** de la respuesta no lleva ese detalle: a un atacante no se le explica qué le faltó al token. Va solo al log.
 
 > **Por qué no un validador tolerante** (aceptar `iss` ausente **o** correcto): sería un agujero permanente, y un token **sin** `iss` es exactamente el que fabricaría un atacante.
 
@@ -965,7 +965,7 @@ Además valida la **coherencia mínima del token** antes de propagar:
 
 **Responsabilidad:** impedir que una persona con la cuenta **no habilitada** llegue a rutas de *otros* microservicios. Es el gate **grueso**; los tres gates finos siguen dentro de `users-service` (`DEC-14`).
 
-**Por qué acá y no en cada micro:** `manifiesto-flujos` §11 dibuja `GET /api/cursos/mis-cursos → users-svc·users/ → 403 ONBOARDING_PENDIENTE`. **Ese carril es imposible:** esa ruta va a `cursos-service`, y `users-service` no ve ese tráfico. Las alternativas eran que cada uno de los once micros implementara el mismo chequeo (inconsistente, y hay que convencer a once equipos) o que consultaran a `users-service` por request (un salto HTTP por request por servicio). Ver `SPEC-users-service.md` §18 / INC-18.
+**Por qué acá y no en cada micro:** `manifiesto-flujos` §11 dibuja `GET /api/cursos/mis-cursos → users-svc·users/ → 403 ONBOARDING_PENDING`. **Ese carril es imposible:** esa ruta va a `cursos-service`, y `users-service` no ve ese tráfico. Las alternativas eran que cada uno de los once micros implementara el mismo chequeo (inconsistente, y hay que convencer a once equipos) o que consultaran a `users-service` por request (un salto HTTP por request por servicio). Ver `SPEC-users-service.md` §18 / INC-18.
 
 **Contrato:**
 
@@ -1210,7 +1210,7 @@ En el código del Gateway esto se traduce en prohibiciones concretas:
 
 Ambas viven **enteras** en el microservicio destino. Es válido tanto para roles de persona como para el rol `MS`.
 
-**Por qué `@PreAuthorize` y no `@RolesAllowed`:** soporta SpEL, así que permite combinar rol + condición de negocio en la misma anotación (`hasRole('PROFESSOR') and #cursoId == principal.cursoId`) sin escribir una clase aparte, y se integra nativo con el `Authentication` que cada micro arma a partir de los headers propagados. `@RolesAllowed` (JSR-250) es más portable pero se queda corto para cualquier cosa que no sea "tiene este rol sí/no".
+**Por qué `@PreAuthorize` y no `@RolesAllowed`:** soporta SpEL, así que permite combinar rol + condición de negocio en la misma anotación (`hasRole('PROFESSOR') and #cursoId == principal.cursoId`) sin write una clase aparte, y se integra nativo con el `Authentication` que cada micro arma a partir de los headers propagados. `@RolesAllowed` (JSR-250) es más portable pero se queda corto para cualquier cosa que no sea "tiene este rol sí/no".
 
 ### 11.3 La única excepción, y por qué no lo es
 
@@ -1640,7 +1640,7 @@ Del manifiesto §12, traducido a pruebas concretas.
 | 4 | Confirmado **con pruebas de integración** el orden efectivo entre Spring Security y los `GlobalFilter` — **no asumirlo** por el orden declarado en código | `PipelineOrderIT` — filtros instrumentados que registran su secuencia real en un `List<String>` compartido |
 | 5 | Un request a `/public/**` pasa sin token; el mismo path fuera de `/public/**` sin token da **401** | `PublicPrivateRouteIT` |
 | 6 | Un token de servicio con **`aud` incorrecto** es rechazado **por el Gateway**, no solo por el microservicio | `ServiceAudienceIT` (**DEC-04**): token con `aud: cursos-service` contra `/api/users/profile/x` → **403**; el mismo con `aud: users-service` → pasa. Además: token de servicio **sin** `aud` → 403 |
-| 7 | **(v5)** Un access token de persona con firma y `exp` válidos pero **`sid` desactualizado** es rechazado con **401** por el Gateway — no llega a rutearse | `SessionInvalidationIT` con Testcontainers Redis: escribir `session:{u}=sid-B`, presentar token con `sid-A` → 401 |
+| 7 | **(v5)** Un access token de persona con firma y `exp` válidos pero **`sid` desactualizado** es rechazado con **401** por el Gateway — no llega a rutearse | `SessionInvalidationIT` con Testcontainers Redis: write `session:{u}=sid-B`, presentar token con `sid-A` → 401 |
 | 7b | **(DEC-01)** El fail-mode distingue causa | `SessionInvalidationIT`: key borrada → **401**; contenedor de Redis **detenido** → **503 + `Retry-After`**, nunca 401 ni 200 |
 | 7c | **(DEC-07 + DEC-44)** Un token con `iss` distinto de `users-service`, o **sin** `iss`, da `401`; y el log deja una línea `JWT_RECHAZADO` **que nombra el claim** | `IssuerValidationIT` — los dos casos, más un assert sobre el contenido del log |
 | 7d | **(DEC-44)** Un token de persona **sin** `est`/`pwd`/`onb` es rechazado y el log nombra el claim faltante | `AccountStateGuardIT` — es el caso "`users-service` viejo contra Gateway nuevo", que ahora falla de forma legible |

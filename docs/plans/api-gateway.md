@@ -23,8 +23,8 @@
 - **R9 · Es el único servicio con `fetch-registry: true`.**
 - **Pipeline de 9 pasos**, orden no negociable: Security → `CorrelationIdFilter@1` → `LoggingFilter@2` → `PublicRouteGuard@3` → `PrivateRouteGuard@4` → `AccountStateGuard@5` → `ServiceAudienceFilter@6` → `IdentityPropagationFilter@7` → `RateLimitFilter@8`.
 - **Headers de identidad** (`DEC-05`): separador **coma sin espacio**, sin valores vacíos, sin coma final; `MS` **dentro** de `X-Service-Scopes`, primero los roles y después los scopes.
-- **Claims validados** (`DEC-44`): `iss` = `"users-service"` **siempre**, sin flag. `est`/`pwd`/`onb` obligatorios en el token de persona. Un rechazo loguea `JWT_RECHAZADO` **nombrando el claim**; el cuerpo del `401` no lo dice.
-- **`DEC-01` fail-closed distinguiendo causa:** Redis no responde → **503 + `Retry-After`**; key ausente → **401 sesión cerrada**; key distinta → **401 sesión superada**. Nunca fail-open.
+- **Claims validados** (`DEC-44`): `iss` = `"users-service"` **siempre**, sin flag. `est`/`pwd`/`onb` obligatorios en el token de persona. Un rechazo loguea `JWT_RECHAZADO` **nombrando el claim**; el body del `401` no lo dice.
+- **`DEC-01` fail-closed distinguiendo cause:** Redis no responde → **503 + `Retry-After`**; key ausente → **401 sesión cerrada**; key distinta → **401 sesión superada**. Nunca fail-open.
 - **Nunca loguea:** bodies, tokens, header `Authorization`, ni el `clientSecret` de `/auth/token`.
 - **Errores:** siempre `ProblemDetail` (RFC 9457), con los mismos `type` que `users-service` — en particular `https://tpi.utn.frc/errors/too-many-attempts` para el `429` (`DEC-24`).
 
@@ -760,11 +760,11 @@ public final class ErrorTypes {
     public static final URI NOT_AUTHENTICATED     = URI.create(BASE + "not-authenticated");
     public static final URI SESSION_CLOSED     = URI.create(BASE + "session-closed");
     public static final URI SESSION_SUPERSEDED    = URI.create(BASE + "session-superseded");
-    public static final URI AUDIENCIA_INVALIDA = URI.create(BASE + "invalid-audience");
+    public static final URI INVALID_AUDIENCE = URI.create(BASE + "invalid-audience");
     public static final URI PENDING_ACCOUNT   = URI.create(BASE + "pending-account");
     public static final URI PASSWORD_CHANGE_REQUIRED = URI.create(BASE + "password-change-required");
     public static final URI ONBOARDING_PENDING      = URI.create(BASE + "onboarding-pending");
-    public static final URI SERVICIO_NO_DISPONIBLE    = URI.create(BASE + "service-unavailable");
+    public static final URI SERVICE_UNAVAILABLE    = URI.create(BASE + "service-unavailable");
     public static final URI ROUTE_NOT_FOUND          = URI.create(BASE + "route-not-found");
     /** DEC-24 - the SAME one auth/ uses for its per-e-mail limit. */
     public static final URI TOO_MANY_ATTEMPTS       = URI.create(BASE + "too-many-attempts");
@@ -933,7 +933,7 @@ los otros once micros: se test, no se confia."
 > dentro del listener de refresco de rutas, así que no rompe el arranque**. El
 > Gateway levanta sano, sin un stack trace a la vista, con la tabla de rutas
 > **vacía**, y contesta **404 a todo**. El síntoma no se parece en nada a la
-> causa, y se busca el problema en el ruteo, en Eureka o en la allowlist.
+> cause, y se busca el problema en el ruteo, en Eureka o en la allowlist.
 >
 > Por eso el locator dinámico va **apagado** (`discovery.locator.enabled:
 > false`) y las rutas las genera `AllowlistRouteLocator`, un
@@ -1100,9 +1100,13 @@ destino. Registrarse en Eureka no expone un servicio: fuera de la allowlist, 404
 ### Task 4: Errores uniformes y fallback
 
 **Files:**
-- Create: `src/main/java/…/web/{ProblemDetails,GatewayErrorAttributes,FallbackController}.java`
+- Create: `src/main/java/…/web/{GatewayErrorAttributes,FallbackController}.java`
 - Create: `src/main/java/…/web/RouteNotFoundHandler.java`
-- Test: `src/test/java/…/web/ProblemDetailsTest.java`
+
+> **`ProblemDetails` ya está en la base**, con su test. Es la costura por la
+> que salen TODOS los errores del Gateway, y tres lotes la consumen (T6, T8,
+> T12): si naciera acá, esos tres no compilarían hasta que este lote mergee.
+> Tu tarea la usa, no la escribe.
 
 > **Todos los errores del Gateway son problem+json, incluido el 404.** Un
 > prefijo que no está en la allowlist termina, si nadie lo intercepta, en el
@@ -1170,7 +1174,7 @@ class ProblemDetailsTest {
         // here, unlike a 401, where retrying fixes nothing.
         var ex = exchange();
         StepVerifier.create(ProblemDetails.withRetryAfter(ex, HttpStatus.SERVICE_UNAVAILABLE,
-                ErrorTypes.SERVICIO_NO_DISPONIBLE, "No disponible",
+                ErrorTypes.SERVICE_UNAVAILABLE, "No disponible",
                 "Reintente en unos segundos.", Duration.ofSeconds(5))).verifyComplete();
 
         assertThat(ex.getResponse().getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
@@ -1229,23 +1233,23 @@ public final class ProblemDetails {
             res.getHeaders().add(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfter.toSeconds()));
         }
 
-        Map<String, Object> cuerpo = new LinkedHashMap<>();
-        cuerpo.put("type", type.toString());
-        cuerpo.put("title", title);
-        cuerpo.put("status", status.value());
-        cuerpo.put("detail", detail);
-        cuerpo.put("instance", exchange.getRequest().getPath().value());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("type", type.toString());
+        body.put("title", title);
+        body.put("status", status.value());
+        body.put("detail", detail);
+        body.put("instance", exchange.getRequest().getPath().value());
         String requestId = exchange.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID);
-        if (requestId != null) cuerpo.put("requestId", requestId);
+        if (requestId != null) body.put("requestId", requestId);
 
         // Extra keys set by whoever cuts the request - AccountStateGuard adds
         // `accountStatus`, which is what the frontend uses to decide which
         // screen to show. Same criterion as users-service's ProblemDetail.
         Object extras = exchange.getAttribute(ATTR_EXTRAS);
-        if (extras instanceof Map<?, ?> m) m.forEach((k, v) -> cuerpo.put(String.valueOf(k), v));
+        if (extras instanceof Map<?, ?> m) m.forEach((k, v) -> body.put(String.valueOf(k), v));
 
         try {
-            DataBuffer buffer = res.bufferFactory().wrap(MAPPER.writeValueAsBytes(cuerpo));
+            DataBuffer buffer = res.bufferFactory().wrap(MAPPER.writeValueAsBytes(body));
             return res.writeWith(Mono.just(buffer));
         } catch (Exception e) {
             return res.setComplete();
@@ -1276,7 +1280,7 @@ public class FallbackController {
     @RequestMapping("/fallback/{serviceId}")
     public Mono<Void> fallback(@PathVariable String serviceId, ServerWebExchange exchange) {
         return ProblemDetails.withRetryAfter(exchange, HttpStatus.SERVICE_UNAVAILABLE,
-                ErrorTypes.SERVICIO_NO_DISPONIBLE, "Servicio no disponible",
+                ErrorTypes.SERVICE_UNAVAILABLE, "Servicio no disponible",
                 "El servicio '" + serviceId + "' no esta respondiendo. Reintente en unos segundos.",
                 Duration.ofSeconds(10));
     }
@@ -1352,14 +1356,17 @@ users-service (DEC-24) y el 503 lleva Retry-After (DEC-01)."
 ### Task 5: Sesión única — repositorio Redis con caché local
 
 **Files:**
-- Create: `src/main/java/…/repository/SessionRepository.java`
 - Create: `src/main/java/…/repository/impl/{RedisSessionRepository,CachingSessionRepository}.java`
+
+> **La interfaz `SessionRepository` y su `SessionState` sellado ya están en la
+> base.** Vos escribís las dos implementaciones. Igual que arriba: T6 compila
+> contra la interfaz desde el día uno, y lo que espera de vos es el bean.
 - Create: `src/main/java/…/config/RedisConfig.java`
 - Test: `src/test/java/…/repository/CachingSessionRepositoryTest.java`
 
 **Interfaces:**
 - Consumes: `SessionCacheProperties` (T2).
-- Produces: `SessionRepository.findSid(String userId)` → `Mono<EstadoSesion>` donde `sealed interface EstadoSesion` tiene `Vigente(String sid)`, `Ausente`, `NoDisponible` — **el tipo obliga a manejar las tres ramas de `DEC-01`**.
+- Produces: `SessionRepository.findSid(String userId)` → `Mono<SessionState>` donde `sealed interface SessionState` tiene `Active(String sid)`, `Absent`, `Unavailable` — **el tipo obliga a manejar las tres ramas de `DEC-01`**.
 
 - [ ] **Step 1: Escribir la interfaz**
 
@@ -1376,13 +1383,13 @@ public interface SessionRepository {
      * responding" (503). With Optional<String> both look the same - empty - and
      * that is exactly the confusion that produces an accidental fail-open.
      */
-    sealed interface EstadoSesion {
-        record Vigente(String sid) implements EstadoSesion { }
-        record Ausente() implements EstadoSesion { }
-        record NoDisponible(Throwable causa) implements EstadoSesion { }
+    sealed interface SessionState {
+        record Active(String sid) implements SessionState { }
+        record Absent() implements SessionState { }
+        record Unavailable(Throwable cause) implements SessionState { }
     }
 
-    Mono<EstadoSesion> findSid(String userId);
+    Mono<SessionState> findSid(String userId);
 }
 ```
 
@@ -1392,7 +1399,7 @@ public interface SessionRepository {
 package ar.edu.utn.frc.tup.p4.apigateway.repository;
 
 import ar.edu.utn.frc.tup.p4.apigateway.config.properties.SessionCacheProperties;
-import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository.EstadoSesion;
+import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository.SessionState;
 import ar.edu.utn.frc.tup.p4.apigateway.repository.impl.CachingSessionRepository;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -1412,7 +1419,7 @@ class CachingSessionRepositoryTest {
     void dos_lecturas_seguidas_pegan_UNA_sola_vez_a_Redis() {
         AtomicInteger llamadas = new AtomicInteger();
         var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new EstadoSesion.Vigente("sid-1")); },
+                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Active("sid-1")); },
                 props);
 
         StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
@@ -1428,7 +1435,7 @@ class CachingSessionRepositoryTest {
         AtomicInteger llamadas = new AtomicInteger();
         var cacheado = new CachingSessionRepository(
                 id -> { llamadas.incrementAndGet();
-                        return Mono.just(new EstadoSesion.NoDisponible(new RuntimeException("caido"))); },
+                        return Mono.just(new SessionState.Unavailable(new RuntimeException("caido"))); },
                 props);
 
         StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
@@ -1443,7 +1450,7 @@ class CachingSessionRepositoryTest {
         // to hit Redis on every request of an already closed session.
         AtomicInteger llamadas = new AtomicInteger();
         var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new EstadoSesion.Ausente()); },
+                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Absent()); },
                 props);
 
         StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
@@ -1456,7 +1463,7 @@ class CachingSessionRepositoryTest {
     void cada_usuario_tiene_su_propia_entrada() {
         AtomicInteger llamadas = new AtomicInteger();
         var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new EstadoSesion.Vigente(id)); },
+                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Active(id)); },
                 props);
 
         StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
@@ -1490,13 +1497,13 @@ public class RedisSessionRepository implements SessionRepository {
     public RedisSessionRepository(ReactiveStringRedisTemplate redis) { this.redis = redis; }
 
     @Override
-    public Mono<EstadoSesion> findSid(String userId) {
+    public Mono<SessionState> findSid(String userId) {
         return redis.opsForValue().get("session:" + userId)
-                .map(sid -> (EstadoSesion) new EstadoSesion.Vigente(sid))
-                .defaultIfEmpty(new EstadoSesion.Ausente())
+                .map(sid -> (SessionState) new SessionState.Active(sid))
+                .defaultIfEmpty(new SessionState.Absent())
                 // DEC-01: a Redis error does NOT become "absent".
                 // Confundirlos es fail-open disfrazado de fail-closed.
-                .onErrorResume(e -> Mono.just(new EstadoSesion.NoDisponible(e)));
+                .onErrorResume(e -> Mono.just(new SessionState.Unavailable(e)));
     }
 }
 ```
@@ -1527,7 +1534,7 @@ import reactor.core.publisher.Mono;
 public class CachingSessionRepository implements SessionRepository {
 
     private final SessionRepository delegate;
-    private final Cache<String, EstadoSesion> cache;
+    private final Cache<String, SessionState> cache;
 
     public CachingSessionRepository(
             @Qualifier("redisSessionRepository") SessionRepository delegate,
@@ -1540,14 +1547,14 @@ public class CachingSessionRepository implements SessionRepository {
     }
 
     @Override
-    public Mono<EstadoSesion> findSid(String userId) {
-        EstadoSesion cacheado = cache.getIfPresent(userId);
+    public Mono<SessionState> findSid(String userId) {
+        SessionState cacheado = cache.getIfPresent(userId);
         if (cacheado != null) return Mono.just(cacheado);
 
         return delegate.findSid(userId).doOnNext(status -> {
             // Unavailable is NOT cached: caching a Redis failure for 3 s turns
             // a hiccup into a guaranteed 3 s outage.
-            if (!(status instanceof EstadoSesion.NoDisponible)) cache.put(userId, status);
+            if (!(status instanceof SessionState.Unavailable)) cache.put(userId, status);
         });
     }
 }
@@ -1568,7 +1575,7 @@ git commit -m "feat: sesion unica con tipo sellado de tres ramas y cache de 3s
 
 DEC-01: las tres ramas son un TIPO, no un Optional con flag — el compilador
 obliga a distinguir 401 de 503. Con Optional las dos se ven igual: vacio.
-DEC-25: NoDisponible no se cachea, o un hipo de Redis seria una caida de 3s."
+DEC-25: Unavailable no se cachea, o un hipo de Redis seria una caida de 3s."
 ```
 
 ---
@@ -1581,7 +1588,11 @@ DEC-25: NoDisponible no se cachea, o un hipo de Redis seria una caida de 3s."
 - Test: `src/test/java/…/integration/{IssuerValidationIT,SessionInvalidationIT}.java`
 
 **Interfaces:**
-- Consumes: `SessionRepository` (T5), `JwtProperties` (T2), `ProblemDetails` (T4).
+- Consumes: `SessionRepository` y `ProblemDetails` (**ambos en la base**, así
+  que compilás desde el día uno), `JwtProperties` (T2).
+- Espera de T5: el **bean** que implementa `SessionRepository`. Sin él la
+  cadena de Security compila pero el contexto no levanta, así que tus dos IT
+  corren recién cuando T5 esté en `main`. El resto de la tarea no espera.
 - Produces: la cadena de Security. Después de este paso, `exchange.getPrincipal()` entrega un `JwtAuthenticationToken` ya validado.
 
 - [ ] **Step 1: Escribir el test de `iss` (falla)** — criterio de DoD #7c
@@ -1782,7 +1793,7 @@ public class IssuerValidator implements OAuth2TokenValidator<Jwt> {
 package ar.edu.utn.frc.tup.p4.apigateway.security;
 
 import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository;
-import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository.EstadoSesion;
+import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.core.*;
@@ -1825,21 +1836,21 @@ public class SessionValidator implements OAuth2TokenValidator<Jwt> {
         // A bounded block(): Spring Security's decoder is synchronous in its
         // validator contract. The Redis client's 500 ms timeout
         // (application.yml) is what keeps this from hanging the event loop.
-        EstadoSesion status = sessions.findSid(jwt.getSubject()).block();
+        SessionState status = sessions.findSid(jwt.getSubject()).block();
 
         return switch (status) {
-            case EstadoSesion.Vigente v when v.sid().equals(sidToken) ->
+            case SessionState.Active v when v.sid().equals(sidToken) ->
                     OAuth2TokenValidatorResult.success();
-            case EstadoSesion.Vigente v -> {
+            case SessionState.Active v -> {
                 log.warn("JWT_RECHAZADO reason=session-superseded sub={}", jwt.getSubject());
                 yield fallo(ERROR_SESION_SUPERADA, "Otro dispositivo inicio sesion.");
             }
-            case EstadoSesion.Ausente ignored -> {
+            case SessionState.Absent ignored -> {
                 log.warn("JWT_RECHAZADO reason=session-closed sub={}", jwt.getSubject());
                 yield fallo(ERROR_SESION_CERRADA, "La sesion fue cerrada.");
             }
-            case EstadoSesion.NoDisponible nd -> {
-                log.error("SESION_NO_VERIFICABLE sub={} — Redis no responde", jwt.getSubject(), nd.causa());
+            case SessionState.Unavailable nd -> {
+                log.error("SESION_NO_VERIFICABLE sub={} — Redis no responde", jwt.getSubject(), nd.cause());
                 yield fallo(ERROR_REDIS_CAIDO, "No se pudo verificar la sesion.");
             }
             case null -> fallo(ERROR_REDIS_CAIDO, "No se pudo verificar la sesion.");
@@ -1924,7 +1935,7 @@ public class SecurityConfig {
             String code = codigoDe(denegado);
             if (SessionValidator.ERROR_REDIS_CAIDO.equals(code)) {
                 return ProblemDetails.withRetryAfter(exchange, HttpStatus.SERVICE_UNAVAILABLE,
-                        ErrorTypes.SERVICIO_NO_DISPONIBLE, "No se pudo verificar la sesion",
+                        ErrorTypes.SERVICE_UNAVAILABLE, "No se pudo verificar la sesion",
                         "Reintente en unos segundos.", Duration.ofSeconds(5));
             }
             URI type = switch (code) {
@@ -1957,8 +1968,8 @@ Expected: PASS — 8 tests.
 git add src/main/java src/test/java
 git commit -m "feat: autenticacion con validation de iss y sid (DEC-44, DEC-01)
 
-El validador de iss loguea JWT_RECHAZADO nombrando el claim; el cuerpo del 401
-no lo dice. El fail-mode distingue causa: Redis caido da 503 + Retry-After,
+El validador de iss loguea JWT_RECHAZADO nombrando el claim; el body del 401
+no lo dice. El fail-mode distingue cause: Redis caido da 503 + Retry-After,
 no 401 — decirle 'tu sesion vencio' a alguien cuya sesion esta bien lo manda
 a re-loguearse al pedo.
 R3: cero hasRole en la cadena. Todo lo privado es authenticated()."
@@ -2959,7 +2970,7 @@ public class ServiceAudienceFilter implements GlobalFilter, Ordered {
 
     private Mono<Void> reject(ServerWebExchange exchange, String detalle) {
         return ProblemDetails.write(exchange, HttpStatus.FORBIDDEN,
-                ErrorTypes.AUDIENCIA_INVALIDA, "Audiencia invalida", detalle);
+                ErrorTypes.INVALID_AUDIENCE, "Audiencia invalida", detalle);
     }
 
     @Override public int getOrder() { return 60; }
