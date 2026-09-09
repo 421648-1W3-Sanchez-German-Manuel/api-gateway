@@ -607,7 +607,7 @@ no se puede probar nada del pipeline."
 
 **Interfaces:**
 - Consumes: nada.
-- Produces: `PrincipalContext` — `record PrincipalContext(PrincipalType tipo, String subject, List<String> roles, List<String> scopes, String sid, String est, Boolean pwd, Boolean onb, String onBehalfOf)` con `static PrincipalContext de(Jwt)`; `IdentityHeaders.RESERVED` (`List<String>`).
+- Produces: `PrincipalContext` — `record PrincipalContext(PrincipalType type, String subject, List<String> roles, List<String> scopes, String sid, String est, Boolean pwd, Boolean onb, String onBehalfOf)` con `static PrincipalContext from(Jwt)`; `IdentityHeaders.RESERVED` (`List<String>`).
 
 - [ ] **Step 1: Escribir el test (falla)**
 
@@ -642,9 +642,9 @@ class PrincipalContextFactoryTest {
                 .claim("roles", List.of("STUDENT", "PROFESSOR")).claim("sid", "sid-1")
                 .claim("est", "ACTIVE").claim("pwd", false).claim("onb", false).build();
 
-        PrincipalContext p = PrincipalContext.de(jwt);
+        PrincipalContext p = PrincipalContext.from(jwt);
 
-        assertThat(p.tipo()).isEqualTo(PrincipalType.USER);
+        assertThat(p.type()).isEqualTo(PrincipalType.USER);
         assertThat(p.subject()).isEqualTo(sub.toString());
         assertThat(p.roles()).containsExactly("STUDENT", "PROFESSOR");
         assertThat(p.sid()).isEqualTo("sid-1");
@@ -658,7 +658,7 @@ class PrincipalContextFactoryTest {
                 .claim("roles", List.of("STUDENT", "PROFESSOR")).claim("sid", "s")
                 .claim("est", "ACTIVE").claim("pwd", false).claim("onb", false).build();
 
-        assertThat(PrincipalContext.de(jwt).rolesHeader()).isEqualTo("STUDENT,PROFESSOR");
+        assertThat(PrincipalContext.from(jwt).rolesHeader()).isEqualTo("STUDENT,PROFESSOR");
     }
 
     @Test
@@ -668,7 +668,7 @@ class PrincipalContextFactoryTest {
                 .claim("roles", List.of("MS")).claim("aud", List.of("users-service"))
                 .claim("scope", "users.profile.read").build();
 
-        assertThat(PrincipalContext.de(jwt).scopesHeader()).isEqualTo("MS,users.profile.read");
+        assertThat(PrincipalContext.from(jwt).scopesHeader()).isEqualTo("MS,users.profile.read");
     }
 
     @Test
@@ -677,7 +677,7 @@ class PrincipalContextFactoryTest {
                 .claim("roles", List.of("MS")).claim("aud", List.of("users-service"))
                 .claim("scope", "users.profile.read  users.profile.read ").build();
 
-        String header = PrincipalContext.de(jwt).scopesHeader();
+        String header = PrincipalContext.from(jwt).scopesHeader();
         assertThat(header).isEqualTo("MS,users.profile.read");
         assertThat(header).doesNotEndWith(",").doesNotContain(",,").doesNotContain(", ");
     }
@@ -685,7 +685,7 @@ class PrincipalContextFactoryTest {
     @Test
     void an_unknown_type_is_rejected() {
         Jwt jwt = base().subject("s").claim("type", "robot").build();
-        assertThatThrownBy(() -> PrincipalContext.de(jwt))
+        assertThatThrownBy(() -> PrincipalContext.from(jwt))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -695,7 +695,7 @@ class PrincipalContextFactoryTest {
                 .claim("roles", List.of("MS")).claim("aud", List.of("users-service"))
                 .claim("scope", "users.profile.read").build();
 
-        PrincipalContext p = PrincipalContext.de(jwt);
+        PrincipalContext p = PrincipalContext.from(jwt);
         assertThat(p.sid()).isNull();
         assertThat(p.est()).isNull();
     }
@@ -741,7 +741,7 @@ public enum PrincipalType {
     PrincipalType(String claim) { this.claim = claim; }
     public String claim() { return claim; }
 
-    public static PrincipalType de(String value) {
+    public static PrincipalType from(String value) {
         for (PrincipalType t : values()) if (t.claim.equals(value)) return t;
         throw new IllegalArgumentException("type de token desconocido: " + value);
     }
@@ -788,23 +788,23 @@ import java.util.stream.Stream;
  * The ALREADY VALIDATED identity, in an immutable record. Everything that goes
  * out as a header derives from here and only here, never from an inbound one.
  */
-public record PrincipalContext(PrincipalType tipo, String subject, List<String> roles,
+public record PrincipalContext(PrincipalType type, String subject, List<String> roles,
                                List<String> scopes, String sid, String est,
                                Boolean pwd, Boolean onb, String onBehalfOf) {
 
-    public static PrincipalContext de(Jwt jwt) {
-        PrincipalType tipo = PrincipalType.de(jwt.getClaimAsString("type"));
+    public static PrincipalContext from(Jwt jwt) {
+        PrincipalType type = PrincipalType.from(jwt.getClaimAsString("type"));
         List<String> roles = normalize(jwt.getClaimAsStringList("roles"));
 
-        if (tipo == PrincipalType.USER) {
-            return new PrincipalContext(tipo, jwt.getSubject(), roles, List.of(),
+        if (type == PrincipalType.USER) {
+            return new PrincipalContext(type, jwt.getSubject(), roles, List.of(),
                     jwt.getClaimAsString("sid"), jwt.getClaimAsString("est"),
                     jwt.getClaim("pwd"), jwt.getClaim("onb"), null);
         }
         List<String> scopes = normalize(
                 Arrays.asList(Optional.ofNullable(jwt.getClaimAsString("scope"))
                         .orElse("").split("[\\s,]+")));
-        return new PrincipalContext(tipo, jwt.getSubject(), roles, scopes,
+        return new PrincipalContext(type, jwt.getSubject(), roles, scopes,
                 null, null, null, null, jwt.getClaimAsString("on_behalf_of"));
     }
 
@@ -2271,6 +2271,19 @@ Hay test de que Authorization y el body nunca aparecen en el log."
 
 ### Task 8: Los dos guards de ruta
 
+> **Sembrá la sesión con el helper de la base, no a mano.**
+> `AbstractGatewayTest` expone `seedSession(redis, userId, sid)`,
+> `clearSession(redis, userId)` y `sessionKey(userId)`. El formato de la key lo
+> escribe el login de `users-service` (`DEC-22`), no el Gateway: si cada IT lo
+> arma por su cuenta, alcanza con que alguien ponga `sessions:` en plural para
+> que su test pase en verde probando nada. Y el `sid` sembrado tiene que ser
+> **el mismo** que el claim `sid` del token, o `SessionGuard` corta con
+> `session-superseded` — que es justo lo que estos tests no están probando.
+>
+> Los snippets de abajo la siembran a mano por legibilidad; en tu código usá el
+> helper.
+
+
 **Files:**
 - Create: `src/main/java/…/filters/{PublicRouteGuard,PrivateRouteGuard}.java`
 - Test: `src/test/java/…/filters/PrivateRouteGuardTest.java`
@@ -2532,7 +2545,7 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
         if (type == null) return "claim-ausente-type";
 
         PrincipalType tipo;
-        try { tipo = PrincipalType.de(type); } catch (IllegalArgumentException e) { return "type-desconocido"; }
+        try { tipo = PrincipalType.from(type); } catch (IllegalArgumentException e) { return "type-desconocido"; }
 
         if (jwt.getSubject() == null || jwt.getSubject().isBlank()) return "claim-ausente-sub";
 
@@ -2540,7 +2553,7 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
         if (roles == null || roles.isEmpty()) return "claim-ausente-roles";
 
         // A service token WITHOUT the MS role is not a service token.
-        if (tipo == PrincipalType.SERVICE && !roles.contains("MS")) return "servicio-sin-MS";
+        if (type == PrincipalType.SERVICE && !roles.contains("MS")) return "servicio-sin-MS";
 
         return null;
     }
@@ -3164,10 +3177,10 @@ public class IdentityPropagationFilter implements GlobalFilter, Ordered {
             // STEP 2 - inject only when there is a validated identity.
             if (jwt == null) return;
 
-            PrincipalContext p = PrincipalContext.de(jwt);
-            r.header(IdentityHeaders.PRINCIPAL_TYPE, p.tipo().claim());
+            PrincipalContext p = PrincipalContext.from(jwt);
+            r.header(IdentityHeaders.PRINCIPAL_TYPE, p.type().claim());
 
-            if (p.tipo() == PrincipalType.USER) {
+            if (p.type() == PrincipalType.USER) {
                 r.header(IdentityHeaders.USER_ID, p.subject());
                 r.header(IdentityHeaders.USER_ROLES, p.rolesHeader());
             } else {

@@ -1,6 +1,7 @@
 package ar.edu.utn.frc.tup.p4.apigateway.support;
 
 import com.redis.testcontainers.RedisContainer;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -140,5 +141,34 @@ public abstract class AbstractGatewayTest {
     /** Consume y devuelve el ultimo request que llego al destino. */
     protected RecordedRequest ultimoRequestAlDestino() throws InterruptedException {
         return DESTINO.takeRequest();
+    }
+
+    // -----------------------------------------------------------------------
+    // Sesion en Redis
+    //
+    // El formato de la key NO es del Gateway: la escribe el login de
+    // users-service (DEC-22) y el Gateway solo la lee. Vive aca, en un solo
+    // lugar, porque la necesitan al menos ocho IT repartidos en cuatro lotes:
+    // si cada uno la arma a mano, alcanza con que alguien escriba `sessions:`
+    // en plural para que su test pase en verde probando nada.
+    //
+    // El `sid` tiene que ser EL MISMO que el claim `sid` del token, o
+    // SessionGuard lo rechaza con session-superseded, que es justo lo que estos
+    // tests no estan probando.
+    // -----------------------------------------------------------------------
+
+    /** La key exacta que escribe users-service. */
+    protected static String sessionKey(Object userId) {
+        return "session:" + userId;
+    }
+
+    /** Deja la sesion de `userId` vigente con ese `sid`. */
+    protected void seedSession(ReactiveStringRedisTemplate redis, Object userId, String sid) {
+        redis.opsForValue().set(sessionKey(userId), sid).block();
+    }
+
+    /** Borra la sesion: es lo que hace un logout, y el 401 que sigue es DEC-22. */
+    protected void clearSession(ReactiveStringRedisTemplate redis, Object userId) {
+        redis.delete(sessionKey(userId)).block();
     }
 }
