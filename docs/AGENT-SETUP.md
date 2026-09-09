@@ -141,7 +141,8 @@ the fact that no microservice publishes a port. Ask for the workspace instead.
 
 | You want to... | You need |
 |---|---|
-| Run your task's tests | `mvn -q clean verify` in your repo |
+| Run your task's tests | `mvn -q clean verify` in your repo — **nothing else** |
+| Run the service itself, locally | RS256 keys: `bash scripts/gen-dev-keys.sh` (needs `openssl`; on Windows run it from Git Bash) |
 | Check you did not break the contract | the integration workspace + `scripts/regresion.sh` |
 | Read a verification code or an activation link | the stack up, then `/codigo` |
 
