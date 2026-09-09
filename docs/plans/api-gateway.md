@@ -1584,6 +1584,7 @@ DEC-25: Unavailable no se cachea, o un hipo de Redis seria una caida de 3s."
 
 **Files:**
 - Create: `src/main/java/…/security/{IssuerValidator,SessionValidator}.java`
+- Create: `src/main/java/…/filters/SessionGuard.java`
 - Create: `src/main/java/…/config/SecurityConfig.java`
 - Test: `src/test/java/…/integration/{IssuerValidationIT,SessionInvalidationIT}.java`
 
@@ -1738,7 +1739,7 @@ class SessionInvalidationIT extends AbstractGatewayTest {
 Run: `mvn -q test -Dtest=IssuerValidationIT+SessionInvalidationIT`
 Expected: FAIL — falta `SecurityConfig`.
 
-- [ ] **Step 4: Escribir los dos validadores**
+- [ ] **Step 4: Escribir `IssuerValidator` y `SessionValidator`**
 
 ```java
 package ar.edu.utn.frc.tup.p4.apigateway.security;
@@ -1796,25 +1797,38 @@ import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository;
 import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.oauth2.core.*;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 /**
  * v5 - single session. It is the gateway's ONLY Redis read.
  * It only applies to `type: user`: service tokens carry no `sid`.
  *
- * DEC-01 - fail-closed, telling the cause apart. The Unavailable branch is
- * signalled with a different error so the filter above can answer 503 instead
- * of 401 - telling someone whose session is perfectly fine that it expired,
- * because Redis went down, sends them to sign in again for nothing.
+ * NO es un OAuth2TokenValidator, y NO PUEDE SERLO. Esa interfaz es SINCRONICA:
+ * `OAuth2TokenValidatorResult validate(Jwt)`. Verificar la sesion exige leer
+ * Redis, que es I/O, y el unico modo de meter I/O reactiva en una firma
+ * sincronica es `.block()`.
+ *
+ * Reactor lo PROHIBE sobre el event loop de Netty, que es donde el
+ * NimbusReactiveJwtDecoder corre sus validators. No es que ande lento: tira
+ * IllegalStateException, que NO es una AuthenticationException, asi que no pasa
+ * por el authenticationEntryPoint y sale como un 500 crudo. Todo token que
+ * decodifica bien pero deberia rechazarse contesta 500 en vez de 401 o 503.
+ *
+ * Por eso esta clase solo DECIDE, devolviendo un Mono, y la decision la aplica
+ * un WebFilter reactivo (`SessionGuard`, Step 5).
+ *
+ * DEC-01 - fail-closed distinguiendo la causa. La rama Unavailable se señaliza
+ * distinto para que el filtro conteste 503 y no 401: decirle "tu sesion vencio"
+ * a alguien cuya sesion esta perfecta, porque se cayo Redis, lo manda a
+ * re-loguearse al pedo.
  */
 @Component
-public class SessionValidator implements OAuth2TokenValidator<Jwt> {
+public class SessionValidator {
 
-    public static final String ERROR_SESION_SUPERADA = "sesion_superada";
-    public static final String ERROR_SESION_CERRADA  = "sesion_cerrada";
-    public static final String ERROR_REDIS_CAIDO     = "sesion_no_verificable";
+    /** La decision, ya traducida. El filtro la mapea a una respuesta. */
+    public enum Resultado { VIGENTE, SUPERADA, CERRADA, NO_VERIFICABLE }
 
     private static final Logger log = LoggerFactory.getLogger(SessionValidator.class);
 
@@ -1822,48 +1836,136 @@ public class SessionValidator implements OAuth2TokenValidator<Jwt> {
 
     public SessionValidator(SessionRepository sessions) { this.sessions = sessions; }
 
-    @Override
-    public OAuth2TokenValidatorResult validate(Jwt jwt) {
+    public Mono<Resultado> verificar(Jwt jwt) {
         if (!"user".equals(jwt.getClaimAsString("type"))) {
-            return OAuth2TokenValidatorResult.success();
+            return Mono.just(Resultado.VIGENTE);   // un token de servicio no lleva sid
         }
+
         String sidToken = jwt.getClaimAsString("sid");
         if (sidToken == null) {
             log.warn("JWT_RECHAZADO reason=claim-ausente claim=sid");
-            return fallo(ERROR_SESION_CERRADA, "Sesion no verificable.");
+            return Mono.just(Resultado.CERRADA);
         }
 
-        // A bounded block(): Spring Security's decoder is synchronous in its
-        // validator contract. The Redis client's 500 ms timeout
-        // (application.yml) is what keeps this from hanging the event loop.
-        SessionState status = sessions.findSid(jwt.getSubject()).block();
-
-        return switch (status) {
-            case SessionState.Active v when v.sid().equals(sidToken) ->
-                    OAuth2TokenValidatorResult.success();
+        return sessions.findSid(jwt.getSubject()).map(status -> switch (status) {
+            case SessionState.Active v when v.sid().equals(sidToken) -> Resultado.VIGENTE;
             case SessionState.Active v -> {
                 log.warn("JWT_RECHAZADO reason=session-superseded sub={}", jwt.getSubject());
-                yield fallo(ERROR_SESION_SUPERADA, "Otro dispositivo inicio sesion.");
+                yield Resultado.SUPERADA;
             }
             case SessionState.Absent ignored -> {
                 log.warn("JWT_RECHAZADO reason=session-closed sub={}", jwt.getSubject());
-                yield fallo(ERROR_SESION_CERRADA, "La sesion fue cerrada.");
+                yield Resultado.CERRADA;
             }
             case SessionState.Unavailable nd -> {
-                log.error("SESION_NO_VERIFICABLE sub={} — Redis no responde", jwt.getSubject(), nd.cause());
-                yield fallo(ERROR_REDIS_CAIDO, "No se pudo verificar la sesion.");
+                log.error("SESION_NO_VERIFICABLE sub={} - Redis no responde",
+                        jwt.getSubject(), nd.cause());
+                yield Resultado.NO_VERIFICABLE;
             }
-            case null -> fallo(ERROR_REDIS_CAIDO, "No se pudo verificar la sesion.");
-        };
-    }
-
-    private OAuth2TokenValidatorResult fallo(String code, String description) {
-        return OAuth2TokenValidatorResult.failure(new OAuth2Error(code, description, null));
+        });
     }
 }
 ```
 
-- [ ] **Step 5: Escribir `SecurityConfig`**
+- [ ] **Step 5: Escribir `SessionGuard`, que aplica la decision**
+
+```java
+package ar.edu.utn.frc.tup.p4.apigateway.filters;
+
+import ar.edu.utn.frc.tup.p4.apigateway.constants.ErrorTypes;
+import ar.edu.utn.frc.tup.p4.apigateway.security.SessionValidator;
+import ar.edu.utn.frc.tup.p4.apigateway.web.ProblemDetails;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Mono;
+
+import java.time.Duration;
+
+/**
+ * Verifica la sesion unica DESPUES de que Security valido firma, exp e iss, y
+ * ANTES de que el request se rutee.
+ *
+ * Es un WebFilter y no un OAuth2TokenValidator por el motivo que explica
+ * `SessionValidator`: la interfaz del validator es sincronica y leer Redis no.
+ */
+@Component
+public class SessionGuard implements WebFilter, Ordered {
+
+    private final SessionValidator validador;
+
+    public SessionGuard(SessionValidator validador) { this.validador = validador; }
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .filter(Authentication::isAuthenticated)
+                .map(Authentication::getPrincipal)
+                .filter(Jwt.class::isInstance)
+                .map(Jwt.class::cast)
+                .flatMap(validador::verificar)
+                // El defaultIfEmpty va ACA, sobre el Resultado, y NO como un
+                // switchIfEmpty al final de la cadena. Los metodos de
+                // ProblemDetails devuelven Mono<Void>, que SIEMPRE completa
+                // vacio: un switchIfEmpty despues de ellos se dispara aunque ya
+                // se haya escrito el 401, y el request rechazado sigue viaje al
+                // destino. El cliente ve 401 y el backend recibe el request
+                // igual. Es el mismo error que en PrivateRouteGuard.
+                //
+                // Sin Authentication -- ruta publica -- el guard no aplica.
+                .defaultIfEmpty(SessionValidator.Resultado.VIGENTE)
+                .flatMap(resultado -> switch (resultado) {
+                    case VIGENTE -> chain.filter(exchange);
+                    case SUPERADA -> ProblemDetails.write(exchange,
+                            HttpStatus.UNAUTHORIZED, ErrorTypes.SESSION_SUPERSEDED,
+                            "Session superseded",
+                            "Another device signed in with this account.");
+                    case CERRADA -> ProblemDetails.write(exchange,
+                            HttpStatus.UNAUTHORIZED, ErrorTypes.SESSION_CLOSED,
+                            "Session closed",
+                            "The session is no longer active. Sign in again.");
+                    // DEC-01: fail-closed, pero 503 y no 401. Reintentar SI
+                    // sirve aca, a diferencia de una sesion cerrada.
+                    case NO_VERIFICABLE -> ProblemDetails.withRetryAfter(exchange,
+                            HttpStatus.SERVICE_UNAVAILABLE, ErrorTypes.SERVICE_UNAVAILABLE,
+                            "Could not verify the session",
+                            "Try again in a few seconds.", Duration.ofSeconds(5));
+                });
+    }
+
+    /**
+     * Despues de la cadena de autenticacion: necesita el Jwt ya validado en el
+     * SecurityContext. La cadena de Security corre en -100
+     * (SecurityWebFiltersOrder), asi que cualquier valor mayor sirve; 0 deja
+     * margen por si hace falta intercalar algo antes.
+     *
+     * Ojo: este es el orden de los WebFilter, que es OTRO orden que el de los
+     * GlobalFilter del pipeline de ruteo (@Order(1) a @Order(8)).
+     */
+    @Override
+    public int getOrder() { return 0; }
+}
+```
+
+> **`SecurityConfig` NO registra `SessionValidator` en el decoder.** El
+> `NimbusReactiveJwtDecoder` lleva unicamente `JwtTimestampValidator` +
+> `IssuerValidator`: los dos son sincronicos de verdad, no leen nada de red.
+>
+> **Avisá cuando esto entre a `main`.** A partir de ahi, un token de persona
+> valido SIN sesion sembrada en Redis se rechaza con `session-closed`. Cualquier
+> IT que mande `TokenFactory.persona(...)` sin sembrar empieza a fallar — el
+> `DiscoveryAllowlistIT` de L7 es uno. La siembra va con
+> `seedSession(redis, sub, "sid-1")` de `AbstractGatewayTest`.
+
+- [ ] **Step 6: Escribir `SecurityConfig`**
 
 ```java
 package ar.edu.utn.frc.tup.p4.apigateway.config;
@@ -1957,12 +2059,12 @@ public class SecurityConfig {
 }
 ```
 
-- [ ] **Step 6: Correr y verify que pasan**
+- [ ] **Step 7: Correr y verify que pasan**
 
 Run: `mvn -q test -Dtest=IssuerValidationIT+SessionInvalidationIT`
 Expected: PASS — 8 tests.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/main/java src/test/java

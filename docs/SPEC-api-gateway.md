@@ -797,12 +797,10 @@ La implementación queda así:
 
 ```java
 @Bean
-ReactiveJwtDecoder jwtDecoder(GatewayProperties props, SessionValidator sessionValidator) {
+ReactiveJwtDecoder jwtDecoder(JwtProperties props) {
     var validators = List.<OAuth2TokenValidator<Jwt>>of(
             new JwtTimestampValidator(),
-            new JwtClaimValidator<String>(
-                    JwtClaimNames.ISS, props.jwt().expectedIssuer()::equals),
-            sessionValidator);                              // §9.1.1
+            new IssuerValidator(props.expectedIssuer()));   // §9.1.1
 
     var decoder = NimbusReactiveJwtDecoder
             .withJwkSetUri(jwkSetUri).jwsAlgorithm(RS256).build();
@@ -811,7 +809,31 @@ ReactiveJwtDecoder jwtDecoder(GatewayProperties props, SessionValidator sessionV
 }
 ```
 
-Sin condicionales ni modos. Lo que sí hay que implementar es que el rechazo **loguee la causa** — ahí estaba el value real.
+Sin condicionales ni modos. Lo que sí hay que implementar es que el rechazo
+**loguee la causa** — ahí estaba el valor real.
+
+> **La verificación de sesión NO va acá, y no es una preferencia.** Un
+> `OAuth2TokenValidator<Jwt>` es **sincrónico**:
+> `OAuth2TokenValidatorResult validate(Jwt)`. Leer la sesión es ir a Redis, o sea
+> I/O, y la única forma de meter I/O reactiva en una firma sincrónica es
+> `.block()`.
+>
+> El `NimbusReactiveJwtDecoder` corre sus validators sobre el pipeline reactivo,
+> en el event loop de Netty. Reactor **prohíbe** bloquear ahí: tira
+> `IllegalStateException`, que **no** es una `AuthenticationException`, así que no
+> pasa por el `authenticationEntryPoint` y sale como un **500 crudo**. El
+> resultado es que todo token que decodifica bien pero debería rechazarse
+> contesta 500 en lugar de 401 o 503 — y el contrato de errores se rompe justo
+> en el caso que más importa.
+>
+> Por eso la sesión se verifica en un `WebFilter` reactivo (`SessionGuard`),
+> después de la cadena de Security y antes del ruteo, que compone el `Mono` sin
+> bloquear y rechaza por `ProblemDetails`. `SessionValidator` deja de ser un
+> validator de Spring y pasa a ser un componente que devuelve
+> `Mono<Resultado>`: sólo decide, no aplica.
+>
+> Los dos validators que **sí** quedan en el decoder son sincrónicos de verdad:
+> no leen nada de red.
 
 **Configuración de rutas:**
 
