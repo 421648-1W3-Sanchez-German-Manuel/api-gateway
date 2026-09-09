@@ -1,20 +1,26 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "tpi-tema-01",
-  "interface": {
-    "displayName": "TPI · Tema 01 Identidad y Usuarios"
+  "description": "Reglas y comandos del subsistema de Identidad y Usuarios (Tema 01) y del contrato para integrarse detrás de su API Gateway",
+  "owner": {
+    "name": "TPI · Tema 01 · TUP UTN FRC"
   },
   "plugins": [
     {
       "name": "tpi-identidad",
-      "source": { "source": "local", "path": "./plugins/tpi-identidad" },
-      "category": "Development",
-      "description": "Comandos y reglas para trabajar sobre api-gateway y users-service"
+      "description": "Comandos y reglas para trabajar sobre api-gateway y users-service",
+      "version": "1.0.0",
+      "author": { "name": "TPI · Tema 01 · TUP UTN FRC" },
+      "source": "./plugins/tpi-identidad",
+      "category": "development"
     },
     {
       "name": "tpi-integracion",
-      "source": { "source": "local", "path": "./plugins/tpi-integracion" },
-      "category": "Development",
-      "description": "Para los equipos de otros temas que se integran detrás del API Gateway"
+      "description": "Para los equipos de otros temas que se integran detrás del API Gateway",
+      "version": "1.0.0",
+      "author": { "name": "TPI · Tema 01 · TUP UTN FRC" },
+      "source": "./plugins/tpi-integracion",
+      "category": "development"
     }
   ]
 }
