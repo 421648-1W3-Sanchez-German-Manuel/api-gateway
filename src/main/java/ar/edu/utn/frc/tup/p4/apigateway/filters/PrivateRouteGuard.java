@@ -18,6 +18,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Pipeline step 5 - @Order(4).
@@ -38,12 +39,23 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
+        // The absent/present decision is resolved into an Optional BEFORE the
+        // chain runs. Deciding it with switchIfEmpty on the downstream would
+        // be wrong: chain.filter() returns Mono<Void>, which ALSO completes
+        // empty, so every valid request would be rejected with a 401.
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .filter(Authentication::isAuthenticated)
-                .filter(a -> a.getPrincipal() instanceof Jwt)
-                .map(a -> (Jwt) a.getPrincipal())
-                .flatMap(jwt -> {
+                .map(Authentication::getPrincipal)
+                .filter(Jwt.class::isInstance)
+                .map(Jwt.class::cast)
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(posible -> {
+                    if (posible.isEmpty()) {
+                        return reject(exchange);
+                    }
+                    Jwt jwt = posible.get();
                     String reason = coherencia(jwt);
                     if (reason != null) {
                         log.warn("JWT_RECHAZADO reason={} sub={}", reason, jwt.getSubject());
@@ -51,8 +63,7 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
                     }
                     exchange.getAttributes().put(ATTR_JWT, jwt);
                     return chain.filter(exchange);
-                })
-                .switchIfEmpty(Mono.defer(() -> reject(exchange)));
+                });
     }
 
     /** Returns the reason, or null when the token is well formed. */
