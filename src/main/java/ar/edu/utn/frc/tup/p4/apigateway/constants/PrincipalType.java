@@ -21,6 +21,6 @@ public enum PrincipalType {
                 return t;
             }
         }
-        throw new IllegalArgumentException("type de token unknown: " + value);
+        throw new IllegalArgumentException("unknown token type: " + value);
     }
 }

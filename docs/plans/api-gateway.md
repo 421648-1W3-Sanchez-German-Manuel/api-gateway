@@ -22,7 +22,7 @@
 - **R7 · El path NO se reescribe.** El locator genera `Path=/api/{nombre}/**` y `filters: []`. Nada de `RewritePath`.
 - **R9 · Es el único servicio con `fetch-registry: true`.**
 - **Pipeline de 9 pasos**, orden no negociable: Security → `CorrelationIdFilter@1` → `LoggingFilter@2` → `PublicRouteGuard@3` → `PrivateRouteGuard@4` → `AccountStateGuard@5` → `ServiceAudienceFilter@6` → `IdentityPropagationFilter@7` → `RateLimitFilter@8`.
-- **Headers de identidad** (`DEC-05`): separador **coma sin espacio**, sin valores vacíos, sin coma final; `MS` **dentro** de `X-Service-Scopes`, primero los roles y después los scopes.
+- **Headers de identidad** (`DEC-05`): separador **coma sin espacio**, sin values vacíos, sin coma final; `MS` **dentro** de `X-Service-Scopes`, primero los roles y después los scopes.
 - **Claims validados** (`DEC-44`): `iss` = `"users-service"` **siempre**, sin flag. `est`/`pwd`/`onb` obligatorios en el token de persona. Un rechazo loguea `JWT_RECHAZADO` **nombrando el claim**; el body del `401` no lo dice.
 - **`DEC-01` fail-closed distinguiendo cause:** Redis no responde → **503 + `Retry-After`**; key ausente → **401 sesión cerrada**; key distinta → **401 sesión superada**. Nunca fail-open.
 - **Nunca loguea:** bodies, tokens, header `Authorization`, ni el `clientSecret` de `/auth/token`.
@@ -743,7 +743,7 @@ public enum PrincipalType {
 
     public static PrincipalType from(String value) {
         for (PrincipalType t : values()) if (t.claim.equals(value)) return t;
-        throw new IllegalArgumentException("type de token desconocido: " + value);
+        throw new IllegalArgumentException("unknown token type: " + value);
     }
 }
 ```
@@ -817,9 +817,9 @@ public record PrincipalContext(PrincipalType type, String subject, List<String> 
                 .reduce((a, b) -> a + "," + b).orElse("");
     }
 
-    private static List<String> normalize(List<String> valores) {
-        if (valores == null) return List.of();
-        return valores.stream().filter(Objects::nonNull).map(String::trim)
+    private static List<String> normalize(List<String> values) {
+        if (values == null) return List.of();
+        return values.stream().filter(Objects::nonNull).map(String::trim)
                 .filter(v -> !v.isEmpty()).distinct().toList();
     }
 }
@@ -2375,7 +2375,12 @@ class PrivateRouteGuardTest {
         Mono<Void> resultado = guard.filter(ex, e -> Mono.empty());
         if (token != null) {
             resultado = resultado.contextWrite(ReactiveSecurityContextHolder
-                    .withAuthentication(new JwtAuthenticationToken(token)));
+                    .withAuthentication(new JwtAuthenticationToken(token,
+                            List.of(new SimpleGrantedAuthority("ROLE_STUDENT")))));
+        // 🔴 El constructor de DOS argumentos, no el de uno: el de un
+        // argumento no llama a setAuthenticated(true), asi que el guard
+        // rechaza por isAuthenticated y el caso verde nunca se ejercita.
+        // Verificado: un argumento -> isAuthenticated() == false.
         }
         StepVerifier.create(resultado).verifyComplete();
         return (HttpStatus) ex.getResponse().getStatusCode();
@@ -2522,30 +2527,46 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
+        // 🔴 Ausente y presente se resuelven ANTES de correr la cadena, con un
+        // Decision y un defaultIfEmpty. La forma que parece natural NO sirve:
+        //
+        //     .flatMap(jwt -> { ...; return chain.filter(exchange); })
+        //     .switchIfEmpty(Mono.defer(() -> reject(exchange)))
+        //
+        // porque `chain.filter(exchange)` es un `Mono<Void>` y un Mono<Void>
+        // completa VACIO cuando todo salio bien. Asi que switchIfEmpty no
+        // distingue "no habia autenticacion" de "la cadena siguio y termino
+        // bien": dispara en los dos casos, y el Gateway contesta 401 a TODO
+        // request privado valido.
         return ReactiveSecurityContextHolder.getContext()
-                .map(org.springframework.security.core.context.SecurityContext::getAuthentication)
+                .map(SecurityContext::getAuthentication)
                 .filter(Authentication::isAuthenticated)
-                .filter(a -> a.getPrincipal() instanceof Jwt)
-                .map(a -> (Jwt) a.getPrincipal())
-                .flatMap(jwt -> {
-                    String reason = coherencia(jwt);
-                    if (reason != null) {
-                        log.warn("JWT_RECHAZADO reason={} sub={}", reason, jwt.getSubject());
+                .map(Authentication::getPrincipal)
+                .filter(Jwt.class::isInstance)
+                .map(Jwt.class::cast)
+                .map(jwt -> new Decision(jwt, coherence(jwt)))
+                .defaultIfEmpty(new Decision(null, "sin-authentication"))
+                .flatMap(decision -> {
+                    if (decision.reason() != null) {
+                        log.warn("JWT_RECHAZADO reason={} sub={}", decision.reason(),
+                                decision.jwt() == null ? "-" : decision.jwt().getSubject());
                         return reject(exchange);
                     }
-                    exchange.getAttributes().put(ATTR_JWT, jwt);
+                    exchange.getAttributes().put(ATTR_JWT, decision.jwt());
                     return chain.filter(exchange);
-                })
-                .switchIfEmpty(Mono.defer(() -> reject(exchange)));
+                });
     }
 
-    /** Returns the reason, or null when the token is well formed. */
-    private String coherencia(Jwt jwt) {
-        String type = jwt.getClaimAsString("type");
-        if (type == null) return "claim-ausente-type";
+    /** El Jwt y el reason del rechazo, o null si esta bien formado. */
+    private record Decision(Jwt jwt, String reason) { }
 
-        PrincipalType tipo;
-        try { tipo = PrincipalType.from(type); } catch (IllegalArgumentException e) { return "type-desconocido"; }
+    /** Returns the reason, or null when the token is well formed. */
+    private String coherence(Jwt jwt) {
+        String typeClaim = jwt.getClaimAsString("type");
+        if (typeClaim == null) return "claim-ausente-type";
+
+        PrincipalType type;
+        try { type = PrincipalType.from(typeClaim); } catch (IllegalArgumentException e) { return "type-desconocido"; }
 
         if (jwt.getSubject() == null || jwt.getSubject().isBlank()) return "claim-ausente-sub";
 
