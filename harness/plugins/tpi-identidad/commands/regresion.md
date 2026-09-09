@@ -5,7 +5,7 @@ description: Corre la regresión de sistema y explica qué significa cada rojo
 > **Esto necesita el workspace de integración, no un repo solo.** El script
 > habla con el stack completo por el puerto 8080, y el stack lo levanta el
 > `docker-compose.yml` del subsistema, que se orquesta aparte (`DEC-40`). Si
-> tenés un solo repositorio clonado, **tu loop de trabajo es `mvn -q verify`**:
+> tenés un solo repositorio clonado, **tu loop de trabajo es `mvn -q clean verify`**:
 > los tests de integración usan Testcontainers y se levantan solos, sin compose
 > y sin los otros servicios. La regresión de sistema es el paso de integración.
 >

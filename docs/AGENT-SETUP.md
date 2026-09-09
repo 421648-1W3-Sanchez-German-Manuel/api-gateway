@@ -124,7 +124,7 @@ loaded. If the answer is vague, the file is not being read — check that
 
 ## Your loop vs. the integration step
 
-**Your loop is `mvn -q verify` inside your repository.** The integration tests
+**Your loop is `mvn -q clean verify` inside your repository.** The integration tests
 use Testcontainers: they start their own MySQL, Redis and Kafka and need nothing
 else. No compose, no other service, no coordination. That is the loop you should
 be running dozens of times a day, and it is the one your task's acceptance check
@@ -141,7 +141,7 @@ the fact that no microservice publishes a port. Ask for the workspace instead.
 
 | You want to... | You need |
 |---|---|
-| Run your task's tests | `mvn -q verify` in your repo |
+| Run your task's tests | `mvn -q clean verify` in your repo |
 | Check you did not break the contract | the integration workspace + `scripts/regresion.sh` |
 | Read a verification code or an activation link | the stack up, then `/codigo` |
 

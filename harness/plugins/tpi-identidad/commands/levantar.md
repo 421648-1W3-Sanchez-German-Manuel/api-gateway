@@ -5,7 +5,7 @@ description: Levanta el stack completo del subsistema y espera a que esté realm
 > **Esto necesita el workspace de integración.** El `docker-compose.yml` del
 > subsistema se orquesta aparte (`DEC-40`) y no viene en este repositorio. Si
 > sólo tenés tu repo clonado, no hay stack que levantar: tu loop es
-> `mvn -q verify`, que arma sus propios contenedores con Testcontainers. No
+> `mvn -q clean verify`, que arma sus propios contenedores con Testcontainers. No
 > escribas un compose para salir del paso — el del subsistema tiene reglas de
 > seguridad que un compose improvisado no tiene, empezando por que ningún micro
 > publica puertos.

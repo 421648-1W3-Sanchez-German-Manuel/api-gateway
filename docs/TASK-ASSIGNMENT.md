@@ -95,10 +95,14 @@ are where ten branches collide. Send the block you need and it gets merged for
 everyone. (`Dockerfile` is the deliverable of L4 and L10 — after that it is
 frozen.)
 
-**Green before merge.** `mvn -q verify` passes - `verify`, not `test`: the
-`*IT` classes run under failsafe and `mvn test` silently skips every one of
-them - and the acceptance check in the last
-step of each task returns what the plan says.
+**Green before merge.** `mvn -q clean verify` passes - `clean` and `verify`, and
+both words earn their place. Without `verify` the `*IT` classes never run:
+failsafe binds them to `verify` and `mvn test` skips every one of them silently.
+Without `clean` the build can pass on stale classes: when a shared file changes,
+Maven recompiles only that file and leaves the `.class` of everything that
+referenced it, so you get green against a classpath that no longer exists. That
+is how a `main` that does not compile got merged once already. And the acceptance check in the last step of
+each task returns what the plan says.
 
 **Daily sync, fifteen minutes, fixed format:** what I finished, what I'm on, what
 blocks me. Blockers go to the group chat the moment they appear, not at the next
@@ -159,7 +163,7 @@ Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista: si necesitás un cambio en otro lado, pará y
 decilo.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida antes de seguir con
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida antes de seguir con
 la siguiente.
 ```
 
@@ -213,7 +217,7 @@ de tocarlas.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
@@ -258,7 +262,7 @@ exime de los dos gates finos y no solo del propio.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
@@ -308,7 +312,7 @@ son contrato, avisá antes de cambiarlas.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
@@ -366,7 +370,7 @@ que ve la persona tiene que decir eso.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
@@ -420,7 +424,7 @@ todavía no están, escribí igual los tests: son el paso 1 de cada tarea.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
@@ -467,7 +471,7 @@ uno. De L7 esperas los BEANS (ruteo y Redis) para que tus dos IT levanten.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
@@ -515,7 +519,7 @@ que tus IT no den 404.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
@@ -569,7 +573,7 @@ que es el dueño de application.yml.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
@@ -615,7 +619,7 @@ se puede evadir con un header no limita nada.
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
 
-Al terminar cada tarea corré `mvn -q verify` y mostrame la salida.
+Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 
 ---
