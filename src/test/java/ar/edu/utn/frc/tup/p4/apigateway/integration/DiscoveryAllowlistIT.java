@@ -6,6 +6,8 @@ import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 
 import java.util.List;
 import java.util.UUID;
@@ -29,12 +31,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class DiscoveryAllowlistIT extends AbstractGatewayTest {
 
+    @Autowired
+    ReactiveStringRedisTemplate redis;
+
     @Test
     void el_path_llega_AL_DESTINO_SIN_REESCRIBIR() throws Exception {
         // R7 - DoD #2. El destino recibe /api/users/me, no /me.
         // Si alguien agrega un RewritePath "para limpiar el prefijo", este
         // test lo caza: los controllers del destino estan mapeados CON prefijo.
         UUID sub = UUID.randomUUID();
+        // La sesion tiene que estar sembrada, y con el MISMO sid que el token:
+        // SessionGuard corre como WebFilter ANTES del ruteo, asi que un token de
+        // persona sin sesion vigente se corta con 401 y el destino no recibe
+        // nada. Sin esto el assert de abajo espera un request que nunca llega.
+        seedSession(redis, sub, "sid-1");
         cliente.get().uri("/api/users/me")
                 .header("Authorization", "Bearer " + TokenFactory.persona(sub, "sid-1"))
                 .exchange();
@@ -47,8 +57,12 @@ class DiscoveryAllowlistIT extends AbstractGatewayTest {
     void un_servicio_FUERA_de_la_allowlist_responde_404() {
         // DoD #3. Registrarse en Eureka NO expone un servicio: hasta que no
         // esta en la allowlist tipada, no existe para el exterior.
+        // Mismo motivo: sin sesion sembrada esto daria 401 y no 404, y el test
+        // pasaria a probar el guard de sesion en vez de la allowlist.
+        UUID sub = UUID.randomUUID();
+        seedSession(redis, sub, "s");
         cliente.get().uri("/api/otro/lo-que-sea")
-                .header("Authorization", "Bearer " + TokenFactory.persona(UUID.randomUUID(), "s"))
+                .header("Authorization", "Bearer " + TokenFactory.persona(sub, "s"))
                 .exchange()
                 .expectStatus().isNotFound();
     }
