@@ -2,6 +2,20 @@ spring:
   application:
     name: api-gateway
 
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # DEC-27 - the only static route besides the fallback. The locator only
+          # generates Path=/api/{name}/**; without this the JWKS passes Security
+          # guards and dies on a 404 from the gateway itself.
+          routes:
+            - id: jwks
+              uri: lb://users-service
+              predicates:
+                - Path=/.well-known/jwks.json
+              filters: []
+
   # In WebFlux a request hops between threads several times, so the traceId that
   # micrometer-tracing leaves in a ThreadLocal is gone by the time the logger
   # runs. With `auto`, Reactor carries it across operators and the pattern can
@@ -52,7 +66,6 @@ gateway:
 #
 #   spring.cloud.gateway  -> L7  (routing, the static JWKS route, fallback)
 #   spring.data.redis     -> L7  (session repository)
-#   gateway.cors          -> L9  (the only place in the subsystem with CORS)
 #   resilience4j          -> L10 (breaker, bulkhead, fallback)
 # ---------------------------------------------------------------------------
 
