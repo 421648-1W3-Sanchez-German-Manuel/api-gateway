@@ -2,6 +2,7 @@ package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -15,6 +16,7 @@ import java.util.UUID;
 class ResilienceIT extends AbstractGatewayTest {
 
     @Autowired ReactiveStringRedisTemplate redis;
+    @Autowired CircuitBreakerRegistry circuitBreakerRegistry;
 
     private String token() {
         UUID u = UUID.randomUUID();
@@ -22,13 +24,21 @@ class ResilienceIT extends AbstractGatewayTest {
         return TokenFactory.persona(u, "sid-1");
     }
 
+    /**
+     * Spring caches the ApplicationContext across test classes with identical
+     * config, so the "porServicio" breaker is the SAME instance every other IT
+     * class sees. Without this reset, a test here that deliberately opens it
+     * leaves every later class (ServiceAudienceIT, AccountStateGuardIT, ...)
+     * getting 503 from an open breaker that has nothing to do with them.
+     */
     @AfterEach
-    void resetDestination() {
+    void resetDestinationAndBreaker() {
         DESTINO.setDispatcher(new Dispatcher() {
             @Override public MockResponse dispatch(RecordedRequest req) {
                 return new MockResponse().setResponseCode(200).setBody("ok");
             }
         });
+        circuitBreakerRegistry.circuitBreaker("porServicio").reset();
     }
 
     @Test
@@ -60,8 +70,15 @@ class ResilienceIT extends AbstractGatewayTest {
         // is going to read any more.
         DESTINO.setDispatcher(new Dispatcher() {
             @Override public MockResponse dispatch(RecordedRequest req) {
-                return new MockResponse().setResponseCode(200)
-                        .setBodyDelay(10, java.util.concurrent.TimeUnit.SECONDS);
+                // setHeadersDelay, not setBodyDelay: NettyRoutingFilter commits
+                // the response status as soon as headers arrive, and a committed
+                // response can no longer be swapped for the fallback. Delaying
+                // only the body means the client sees 200 fast and just waits
+                // out the slow body - the breaker's timeout never gets a chance
+                // to redirect anything. Delaying the headers keeps the response
+                // uncommitted until the CircuitBreaker's TimeLimiter can act.
+                return new MockResponse().setResponseCode(200).setBody("ok")
+                        .setHeadersDelay(10, java.util.concurrent.TimeUnit.SECONDS);
             }
         });
 
