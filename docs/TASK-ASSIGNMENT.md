@@ -448,9 +448,9 @@ Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 src/main/java/…/config/SecurityConfig.java
 src/main/java/…/security/IssuerValidator.java
 src/main/java/…/security/SessionValidator.java
+src/main/java/…/filters/SessionGuard.java
 src/main/java/…/filters/CorrelationIdFilter.java
 src/main/java/…/filters/LoggingFilter.java
-src/main/resources/logback-spring.xml
 src/test/java/…/integration/IssuerValidationIT.java
 src/test/java/…/integration/SessionInvalidationIT.java
 src/test/java/…/filters/CorrelationIdFilterTest.java

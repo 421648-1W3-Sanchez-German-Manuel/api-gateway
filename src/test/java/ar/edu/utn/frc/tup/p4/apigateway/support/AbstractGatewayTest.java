@@ -138,9 +138,26 @@ public abstract class AbstractGatewayTest {
         r.add("eureka.client.enabled", () -> "false");
     }
 
-    /** Consume y devuelve el ultimo request que llego al destino. */
+    /**
+     * Consume y devuelve el ultimo request que llego al destino.
+     *
+     * Con timeout, y NUNCA sin el: `takeRequest()` sin argumentos espera para
+     * siempre. Si el request no llega al destino -- porque un filtro lo rechazo
+     * antes de rutear, que es el bug mas comun de este pipeline -- el test no
+     * falla: CUELGA la corrida entera, sin una linea que diga por que. Ya paso
+     * una vez y se comio cuarenta minutos hasta que alguien miro un jstack.
+     *
+     * El fallo con timeout dice lo unico que hay que saber: el request no llego,
+     * asi que alguien de la cadena contesto antes de rutear.
+     */
     protected RecordedRequest ultimoRequestAlDestino() throws InterruptedException {
-        return DESTINO.takeRequest();
+        RecordedRequest recibido = DESTINO.takeRequest(10, TimeUnit.SECONDS);
+        if (recibido == null) {
+            throw new AssertionError(
+                    "El request no llego al destino en 10s: algun filtro de la cadena lo "
+                    + "rechazo antes de rutear. Mira el status de la respuesta.");
+        }
+        return recibido;
     }
 
     // -----------------------------------------------------------------------
