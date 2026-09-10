@@ -75,10 +75,32 @@ Not everything can start at once. Dependencies:
 | L6 | Jatuf | L4 (account gates) |
 | L10 | Zambrano | L8, L9 (the filters whose order it verifies) |
 
-**Everyone starts on day one anyway.** Step one of every task is the failing
-test, and tests compile against the interfaces the base already defines. Waves 2
-and 3 write their tests while their dependencies are being built. That is the
-point of doing this test-first: the test is the part that does not have to wait.
+**Everyone starts on day one — but not every lot compiles on day one.** Step one
+of every task is the failing test, and for most lots that test compiles against
+the base from the first commit. L8 and L9 are the clean case, which is why the
+table above says so.
+
+Two lots are not that case, and the reason is always a test double that extends
+or decorates a class somebody else owns:
+
+- **L5** cannot compile at all without L3, tests included: `TestActivationSpy
+  extends NotificationEventPublisher`, and that class is L3's.
+- **L1** is split. `TestOtpSpy` implements `SecondFactorProvider`, which L1 owns
+  itself, so U13 and U14 compile from day one. `TestResetSpy` decorates
+  `NotificationEventPublisher`, so U15 does not.
+
+Do not wait for the merge. Bring the dependency into your branch locally:
+
+```
+git fetch origin
+git merge origin/lote-3-cabrera
+```
+
+That merge is **local and disposable**, and it never goes into your pull request:
+when the lot you depend on lands in `main`, you rebase onto `main` and it
+disappears. If the branch you merged still has changes requested, its public
+signatures can still move — write against the **plan**, which is the contract,
+not against whatever that branch happens to say today.
 
 ## Rules
 
@@ -261,7 +283,7 @@ Trabajá en la rama lote-4-carignano. Seguí el plan tarea por tarea y paso por
 paso, sin adelantarte: cada tarea empieza por el test que falla y termina con su
 verificación.
 
-Antes de write código, leé completo el bloque de la regla de las exenciones
+Antes de escribir código, leé completo el bloque de la regla de las exenciones
 en la tarea U8 y explicame con tus palabras por qué un endpoint de salida se
 exime de los dos gates finos y no solo del propio.
 
@@ -366,10 +388,13 @@ Trabajá en la rama lote-1-dellungo. Seguí el plan tarea por tarea y paso por
 paso, sin adelantarte: cada tarea empieza por el test que falla y termina con su
 verificación.
 
-Tu lote consume TokenService (L2) y TokenStore, OtpService y
-NotificationEventPublisher (L3). Si todavía no están mergeados, escribí igual
-los tests de tus tareas: son el paso 1 de cada una y no dependen de la
-implementación ajena.
+Tu lote consume TokenService (L2, ya está en main) y TokenStore, OtpService y
+NotificationEventPublisher (L3, todavía no). U13 y U14 los escribís sin esperar a
+nadie: TestOtpSpy implementa SecondFactorProvider, que es un archivo tuyo. U15 no
+compila sin L3, porque TestResetSpy decora NotificationEventPublisher. Para esa
+tarea mergeá origin/lote-3-cabrera en tu rama, en local: es un merge descartable
+y no se pushea — cuando L3 entre a main, rebaseás contra main y se va. Escribí
+contra los nombres que dice el plan, no contra los que tenga esa rama hoy.
 
 Prestá atención a los tipos de error del refresh: un refresh que ya no sirve no
 es una credencial equivocada, es una sesión que dejó de existir, y el mensaje
@@ -423,12 +448,16 @@ Trabajá en la rama lote-5-palacios. Seguí el plan tarea por tarea y paso por
 paso, sin adelantarte: cada tarea empieza por el test que falla y termina con su
 verificación.
 
-Antes de write el servicio de registro, leé las tres decisiones del paso 4 de
+Antes de escribir el servicio de registro, leé las tres decisiones del paso 4 de
 la tarea U17 y explicame por qué el enlace apunta al frontend y la activación es
 un POST.
 
-Tu lote consume EphemeralTokenService y NotificationEventPublisher (L3). Si
-todavía no están, escribí igual los tests: son el paso 1 de cada tarea.
+Tu lote consume EphemeralTokenService y NotificationEventPublisher (L3), y hasta
+que L3 no esté en main no te compila nada, ni siquiera los tests: TestActivationSpy
+extiende NotificationEventPublisher. Mergeá origin/lote-3-cabrera en tu rama, en
+local: es un merge descartable y no se pushea — cuando L3 entre a main, rebaseás
+contra main y se va. Escribí contra los nombres que dice el plan, no contra los
+que tenga esa rama hoy.
 
 Tus archivos son los que lista la asignación en TASK-ASSIGNMENT.md. No edites
 ningún archivo fuera de esa lista.
