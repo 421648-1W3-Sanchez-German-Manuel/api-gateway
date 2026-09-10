@@ -115,7 +115,15 @@ thirty-second conversation and a fifteen-minute merge conflict avoided.
 file outside your list is a bug in the plan, not permission. Stop and report it:
 the answer is either that the file moves to the base, or that your lot gets its
 own copy — and either way it is a change to the assignment, not something to
-settle inside one branch. This has already happened once.
+settle inside one branch.
+
+**The same goes for a file you need but nobody owns, or that another lot owns
+and has not written yet.** This has happened three times now — `ProblemDetails`
+and `SessionRepository`, the mail spies, `SkipAccountGate` — and the answer was
+the same every time: **anything two or more lots need in order to COMPILE
+belongs to the base.** The implementation stays with its lot; the seam does not.
+Report it and it gets moved, usually the same day. Do not wait for the other
+lot to merge, and do not write your own copy of their file.
 
 **Three files belong to Ramiro alone:** `application.yml`, `pom.xml` and the
 `Dockerfile`. Everyone adds properties and dependencies eventually, and these
@@ -257,7 +265,6 @@ Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 **Files you own**
 
 ```
-src/main/java/…/shared/gates/SkipAccountGate.java
 src/main/java/…/shared/gates/AccountGateInterceptor.java
 src/main/java/…/users/listeners/CourseValidationListener.java
 src/main/java/…/config/WebConfig.java
