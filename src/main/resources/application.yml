@@ -8,7 +8,7 @@ spring:
         jwt:
           # De donde saca el Gateway las claves publicas para validar firmas.
           # Apunta al JWKS de users-service:
-          #   http://users-service:8080/.well-known/jwks.json
+          #   http://users-service:8082/.well-known/jwks.json   (asi lo setea el compose)
           #
           # SIN DEFAULT, a proposito. Si falta, el servicio no arranca y nombra
           # el placeholder que no pudo resolver. Un default seria peor: el
