@@ -274,6 +274,7 @@ src/test/java/…/users/CourseValidationListenerIT.java
 src/test/java/…/TimestampIT.java
 src/test/java/…/ArchitectureTest.java
 Dockerfile
+.dockerignore
 ```
 
 **Why your lot matters:** the three account gates decide what an
