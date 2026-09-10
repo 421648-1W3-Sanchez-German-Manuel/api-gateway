@@ -625,15 +625,23 @@ Al terminar cada tarea corré `mvn -q clean verify` y mostrame la salida.
 ```
 src/main/java/…/ratelimit/RateLimitKeyResolver.java
 src/main/java/…/ratelimit/TokenBucket.java
+src/main/java/…/ratelimit/impl/InMemoryTokenBucket.java
+src/main/java/…/ratelimit/impl/PrincipalRateLimitKeyResolver.java
 src/main/java/…/filters/RateLimitFilter.java
 src/main/java/…/config/ResilienceConfig.java
 src/test/java/…/integration/RateLimitForwardedIT.java
 src/test/java/…/integration/PipelineOrderIT.java
 src/test/java/…/integration/ResilienceIT.java
-src/test/java/…/support/SecuenciaDeFiltros.java
+src/test/java/…/support/FilterSequence.java
 Dockerfile
-.gitignore
+.dockerignore
 ```
+
+**El bloque de `default-filters` de G14 no es tuyo.** El paso 2 de esa tarea te
+hace agregar el filtro `CircuitBreaker` a `application.yml`, y ese archivo es de
+Ramiro. Ya está commiteado en `main`, con el `statusCodes` que el snippet del
+plan no declaraba: sin él, el filtro sólo reacciona a excepciones de la cadena
+reactiva y un 500 del backend pasa de largo sin abrir el breaker.
 
 **Why your lot matters:** `PipelineOrderIT` verifies the order the filters
 *actually* run in, not the one they declare. A misplaced `@Order` is a guard
