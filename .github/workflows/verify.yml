@@ -1,0 +1,84 @@
+# Corre lo mismo que se corre a mano antes de aprobar un PR, pero desde un
+# checkout limpio y en una maquina que no es la de nadie.
+#
+# `clean` no es opcional: sin el, Maven recompila solo el archivo que cambio y
+# deja los .class de todo lo que lo referenciaba, asi que el build pasa contra
+# un classpath que ya no existe. Asi se mergeo una vez un main que no compilaba.
+#
+# `verify` tampoco: failsafe engancha las clases *IT ahi, y `mvn test` las
+# saltea todas en silencio.
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Un push nuevo sobre la misma rama cancela la corrida anterior: no tiene
+# sentido esperar el resultado de un commit que ya no es la cabeza.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      # Ryuk es el contenedor que Testcontainers usa para limpiar. En un runner
+      # efimero no hace falta y a veces no arranca a tiempo.
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: mvn clean verify
+        run: mvn -B clean verify
+
+      # El numero que importa no es "paso": es cuantos corrieron, cuantos
+      # fallaron y cuantos estan salteados. Un @Disabled que nadie mira vuelve
+      # a ser un requisito que se borro en silencio.
+      - name: Contar tests
+        if: always()
+        run: |
+          total() {
+            local dir="target/$1-reports"
+            [ -d "$dir" ] || { echo "0 0 0 0"; return; }
+            grep -h '^Tests run:' "$dir"/*.txt 2>/dev/null \
+              | awk -F'[:,]' '{t+=$2; f+=$4; e+=$6; s+=$8} END{print t+0, f+0, e+0, s+0}'
+          }
+          read -r ut uf ue us <<< "$(total surefire)"
+          read -r it if_ ie is <<< "$(total failsafe)"
+          {
+            echo "| | corridos | fallan | errores | salteados |"
+            echo "|---|---|---|---|---|"
+            echo "| Unitarios | $ut | $uf | $ue | $us |"
+            echo "| Integracion | $it | $if_ | $ie | $is |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$((us + is))" -gt 0 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**$((us + is)) test(s) salteados.** Cada uno tiene que decir en su" \
+                 "@Disabled que espera y de quien." >> "$GITHUB_STEP_SUMMARY"
+            grep -rn '@Disabled' src/test --include='*.java' \
+              | sed 's|^src/test/java/.*/\([A-Za-z]*\.java\)|\1|' \
+              | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+
+      # Sin esto, un rojo en CI obliga a reproducirlo local para saber que
+      # fallo, que es justo lo que el CI venia a evitar.
+      - name: Guardar los reportes cuando algo falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-de-test
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+          retention-days: 7
