@@ -15,7 +15,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 /**
- * Paso 9 del pipeline · @Order(8) · condicional.
+ * Pipeline step 9 · @Order(8) · conditional.
  *
  * A no-op for every route that does not match `expensive-routes`. Startup FAILS
  * if an entry is configured with a threshold of 0: a route declared expensive
@@ -42,8 +42,8 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         props.expensiveRoutes().forEach(r -> {
             if (r.capacity() <= 0 || r.refillPerMinute() <= 0) {
                 throw new IllegalStateException(
-                        "La ruta cara '" + r.path() + "' tiene umbral 0: rechazaria todo. "
-                        + "Configurar capacity y refill-per-minute, o sacarla de la lista.");
+                        "Expensive route '" + r.path() + "' has a threshold of 0: it would reject "
+                        + "everything. Configure capacity and refill-per-minute, or drop it from the list.");
             }
         });
     }
@@ -53,14 +53,14 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         if (!props.enabled() || props.expensiveRoutes() == null) return chain.filter(exchange);
 
         String path = exchange.getRequest().getPath().value();
-        var cara = props.expensiveRoutes().stream()
+        var match = props.expensiveRoutes().stream()
                 .filter(r -> MATCHER.match(r.path(), path)).findFirst();
-        if (cara.isEmpty()) return chain.filter(exchange);
+        if (match.isEmpty()) return chain.filter(exchange);
 
-        var ruta = cara.get();
-        String key = ruta.path() + "|" + resolve.resolve(exchange, ruta.key());
+        var expensiveRoute = match.get();
+        String key = expensiveRoute.path() + "|" + resolve.resolve(exchange, expensiveRoute.key());
 
-        if (bucket.consume(key, ruta.capacity(), ruta.refillPerMinute())) {
+        if (bucket.consume(key, expensiveRoute.capacity(), expensiveRoute.refillPerMinute())) {
             return chain.filter(exchange);
         }
         // DEC-24 - the SAME type auth/ returns for its per-e-mail limit.

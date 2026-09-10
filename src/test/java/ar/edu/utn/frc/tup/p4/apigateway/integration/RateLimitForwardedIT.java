@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RateLimitForwardedIT extends AbstractGatewayTest {
 
     @Test
-    void dos_IPs_distintas_detras_del_MISMO_proxy_consumen_buckets_SEPARADOS() {
+    void two_DIFFERENT_IPs_behind_the_SAME_proxy_consume_SEPARATE_buckets() {
         // The gotcha that never shows up in development: a naive implementation
         // takes the load balancer's IP and rate-limits THE WHOLE INTERNET as if
         // it were one client. The limiter is useless and nobody finds out until
@@ -46,7 +46,7 @@ class RateLimitForwardedIT extends AbstractGatewayTest {
     }
 
     @Test
-    void el_429_lleva_Retry_After_y_el_type_compartido() {
+    void the_429_carries_Retry_After_and_the_shared_type() {
         for (int i = 0; i < 4; i++) {
             cliente.post().uri("/api/users/public/auth/login")
                     .header("X-Forwarded-For", "203.0.113.20").exchange();
@@ -60,7 +60,7 @@ class RateLimitForwardedIT extends AbstractGatewayTest {
     }
 
     @Test
-    void una_ruta_que_NO_esta_en_expensive_routes_no_se_limita() {
+    void a_route_NOT_in_expensive_routes_is_NOT_limited() {
         // The filter is a no-op off the list: we do not want to limit everything.
         for (int i = 0; i < 20; i++) {
             cliente.get().uri("/api/users/public/legal/terms")

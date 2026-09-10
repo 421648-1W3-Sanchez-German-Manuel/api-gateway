@@ -16,26 +16,26 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class InMemoryTokenBucket implements TokenBucket {
 
-    private record Estado(double fichas, long ultimoNanos) { }
+    private record State(double tokens, long lastNanos) { }
 
-    private final Map<String, Estado> buckets = new ConcurrentHashMap<>();
+    private final Map<String, State> buckets = new ConcurrentHashMap<>();
 
     @Override
-    public boolean consume(String key, int capacidad, int recargaPorMinuto) {
-        long ahora = System.nanoTime();
-        // compute() solo puede devolver el nuevo ESTADO, no si se permitio o no
-        // el request: el resultado se guarda aparte, en el mismo compute atomico
-        // que decide el estado, para no perder la decision entre hilos.
-        boolean[] permitido = new boolean[1];
-        buckets.compute(key, (k, previo) -> {
-            double disponibles = previo == null
-                    ? capacidad
-                    : Math.min(capacidad,
-                        previo.fichas() + (ahora - previo.ultimoNanos()) / 60_000_000_000.0 * recargaPorMinuto);
-            permitido[0] = disponibles >= 1;
-            return new Estado(permitido[0] ? disponibles - 1 : disponibles, ahora);
+    public boolean consume(String key, int capacity, int refillPerMinute) {
+        long now = System.nanoTime();
+        // compute() can only return the new STATE, not whether the request was
+        // allowed: the decision is captured separately, inside the same atomic
+        // compute that decides the state, so it can't be lost across threads.
+        boolean[] allowed = new boolean[1];
+        buckets.compute(key, (k, previous) -> {
+            double available = previous == null
+                    ? capacity
+                    : Math.min(capacity,
+                        previous.tokens() + (now - previous.lastNanos()) / 60_000_000_000.0 * refillPerMinute);
+            allowed[0] = available >= 1;
+            return new State(allowed[0] ? available - 1 : available, now);
         });
-        return permitido[0];
+        return allowed[0];
     }
 
     @Override

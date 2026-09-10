@@ -23,7 +23,7 @@ class ResilienceIT extends AbstractGatewayTest {
     }
 
     @AfterEach
-    void restaurarDestino() {
+    void resetDestination() {
         DESTINO.setDispatcher(new Dispatcher() {
             @Override public MockResponse dispatch(RecordedRequest req) {
                 return new MockResponse().setResponseCode(200).setBody("ok");
@@ -32,7 +32,7 @@ class ResilienceIT extends AbstractGatewayTest {
     }
 
     @Test
-    void con_el_destino_caido_el_breaker_abre_y_responde_por_el_fallback() {
+    void with_the_destination_DOWN_the_breaker_opens_and_answers_via_the_fallback() {
         DESTINO.setDispatcher(new Dispatcher() {
             @Override public MockResponse dispatch(RecordedRequest req) {
                 return new MockResponse().setResponseCode(500);
@@ -54,7 +54,7 @@ class ResilienceIT extends AbstractGatewayTest {
     }
 
     @Test
-    void un_destino_LENTO_corta_por_timeout_antes_que_el_cliente() {
+    void a_SLOW_destination_cuts_by_timeout_before_the_client_does() {
         // DEC-42 - timeoutDuration 3 s < a browser's typical timeout. If the
         // gateway cut later, it would keep a thread busy for a response nobody
         // is going to read any more.
@@ -70,7 +70,7 @@ class ResilienceIT extends AbstractGatewayTest {
     }
 
     @Test
-    void el_fallback_devuelve_ProblemDetail_no_una_pagina_de_error() {
+    void the_fallback_returns_a_ProblemDetail_not_an_error_page() {
         cliente.get().uri("/fallback/users-service")
                 .exchange().expectStatus().isEqualTo(503)
                 .expectHeader().contentType("application/problem+json");

@@ -23,12 +23,12 @@ import java.time.Duration;
 public class ResilienceConfig {
 
     @Bean
-    Customizer<ReactiveResilience4JCircuitBreakerFactory> porDefecto() {
+    Customizer<ReactiveResilience4JCircuitBreakerFactory> defaults() {
         return factory -> factory.configureDefault(id -> new Resilience4JConfigBuilder(id)
                 .circuitBreakerConfig(CircuitBreakerConfig.custom()
                         .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
-                        .slidingWindowSize(20)          // ~1 s de trafico con 120 concurrentes:
-                        .failureRateThreshold(50)       // reacciona rapido sin abrir por dos errores
+                        .slidingWindowSize(20)          // ~1 s of traffic at 120 concurrent users
+                        .failureRateThreshold(50)       // reacts fast without opening on two errors
                         .waitDurationInOpenState(Duration.ofSeconds(10))
                         .permittedNumberOfCallsInHalfOpenState(3)
                         .build())
