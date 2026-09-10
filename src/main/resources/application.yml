@@ -111,6 +111,15 @@ gateway:
         key: IP
         capacity: ${RATE_LIMIT_AUTH_CAPACITY:600}
         refill-per-minute: ${RATE_LIMIT_AUTH_REFILL:600}
+      # El registro manda mails, y /resend-activation los manda sin autenticar
+      # contra cualquier direccion que le pasen. Sin esta entrada el unico tope
+      # es el TTL del enlace, que no es un tope. Mucho mas ajustado que auth:
+      # una persona reintenta tres o cuatro veces, un script no.
+      # Orden de magnitud, sin calibrar.
+      - path: /api/users/public/registration/**
+        key: IP
+        capacity: ${RATE_LIMIT_REGISTRATION_CAPACITY:10}
+        refill-per-minute: ${RATE_LIMIT_REGISTRATION_REFILL:10}
     trusted-proxies: []                 # DEC-24 - to resolve X-Forwarded-For
 
 # ---------------------------------------------------------------------------
