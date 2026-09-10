@@ -6,6 +6,18 @@ spring:
     gateway:
       server:
         webflux:
+          # DEC-42 - the breaker is a default filter, so every route the
+          # locator generates gets it. statusCodes is NOT optional: the
+          # CircuitBreaker filter only reacts to exceptions in the reactive
+          # chain, so without it a 500 from the backend travels through
+          # untouched and the breaker never opens.
+          default-filters:
+            - name: CircuitBreaker
+              args:
+                name: porServicio
+                fallbackUri: forward:/fallback/servicio
+                statusCodes: 500,502,503,504
+
           # DEC-27 - the only static route besides the fallback. The locator only
           # generates Path=/api/{name}/**; without this the JWKS passes Security
           # guards and dies on a 404 from the gateway itself.
