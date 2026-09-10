@@ -1,0 +1,7 @@
+target/
+.git/
+.gitignore
+secrets/
+.env
+*.log
+docs/
