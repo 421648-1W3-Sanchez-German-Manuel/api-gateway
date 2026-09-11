@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -102,5 +103,56 @@ class CorrelationInLogsIT extends AbstractGatewayTest {
                 .anySatisfy(evento -> assertThat(
                         evento.getMDCPropertyMap().get(CorrelationIdFilter.CTX_REQUEST_ID))
                         .isEqualTo(generado));
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void el_traceId_del_traceparent_entrante_aparece_en_el_MDC_de_la_linea_de_log() {
+        // W3C Trace Context: el Gateway conserva el traceparent entrante y
+        // deriva traceId/spanId de ahi. Son los MISMOS valores que viajan al
+        // destino y que users-service imprime, asi que se puede cruzar la linea
+        // del Gateway con la del microservicio (criterio 9 del DoD).
+        UUID usuario = UUID.randomUUID();
+        seedSession(redis, usuario, "sid-1");
+        String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+        cliente.get().uri("/api/users/me")
+                .header("Authorization", "Bearer " + TokenFactory.persona(usuario, "sid-1"))
+                .header("traceparent", traceparent)
+                .exchange()
+                .expectStatus().isOk();
+
+        assertThat(capturados.list)
+                .describedAs("el traceId del traceparent entrante tiene que salir en el MDC")
+                .anySatisfy(evento -> {
+                    Map<String, String> mdc = evento.getMDCPropertyMap();
+                    assertThat(mdc).containsEntry(
+                            CorrelationIdFilter.CTX_TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736");
+                    assertThat(mdc).containsEntry(
+                            CorrelationIdFilter.CTX_SPAN_ID, "00f067aa0ba902b7");
+                });
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void sin_traceparent_entrante_el_MDC_igual_lleva_un_traceId_generado() {
+        // El caso comun: el Gateway genera el traceparent. El log tiene que
+        // mostrar ese traceId/spanId aunque no haya llegado ninguno.
+        UUID usuario = UUID.randomUUID();
+        seedSession(redis, usuario, "sid-1");
+
+        cliente.get().uri("/api/users/me")
+                .header("Authorization", "Bearer " + TokenFactory.persona(usuario, "sid-1"))
+                .exchange()
+                .expectStatus().isOk();
+
+        assertThat(capturados.list)
+                .describedAs("toda linea del request lleva un traceId valido generado por el Gateway")
+                .anySatisfy(evento -> {
+                    Map<String, String> mdc = evento.getMDCPropertyMap();
+                    assertThat(mdc).containsKey(CorrelationIdFilter.CTX_TRACE_ID);
+                    assertThat(mdc.get(CorrelationIdFilter.CTX_TRACE_ID)).matches("[0-9a-f]{32}");
+                    assertThat(mdc.get(CorrelationIdFilter.CTX_SPAN_ID)).matches("[0-9a-f]{16}");
+                });
     }
 }

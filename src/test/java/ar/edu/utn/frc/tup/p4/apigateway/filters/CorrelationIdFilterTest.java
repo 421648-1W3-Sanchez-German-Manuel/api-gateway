@@ -8,6 +8,7 @@ import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import reactor.util.context.ContextView;
 
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -23,6 +24,17 @@ class CorrelationIdFilterTest {
         GatewayFilterChain chain = e -> { visto.set(e); return Mono.empty(); };
         StepVerifier.create(filtro.filter(ex, chain)).verifyComplete();
         return visto.get();
+    }
+
+    private ContextView runYCapturaContexto(MockServerHttpRequest req) {
+        var ex = MockServerWebExchange.from(req);
+        AtomicReference<ContextView> contexto = new AtomicReference<>();
+        GatewayFilterChain chain = e -> Mono.deferContextual(ctx -> {
+            contexto.set(ctx);
+            return Mono.empty();
+        });
+        StepVerifier.create(filtro.filter(ex, chain)).verifyComplete();
+        return contexto.get();
     }
 
     @Test
@@ -41,6 +53,26 @@ class CorrelationIdFilterTest {
                 .header("traceparent", traceparent).build());
 
         assertThat(mutado.getRequest().getHeaders().getFirst("traceparent")).isEqualTo(traceparent);
+    }
+
+    @Test
+    void publica_el_traceId_y_el_spanId_del_traceparent_en_el_contexto() {
+        String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        ContextView ctx = runYCapturaContexto(MockServerHttpRequest.get("/api/users/me")
+                .header("traceparent", traceparent).build());
+
+        assertThat(ctx.<String>get(CorrelationIdFilter.CTX_TRACE_ID))
+                .isEqualTo("4bf92f3577b34da6a3ce929d0e0e4736");
+        assertThat(ctx.<String>get(CorrelationIdFilter.CTX_SPAN_ID))
+                .isEqualTo("00f067aa0ba902b7");
+    }
+
+    @Test
+    void sin_traceparent_genera_un_traceId_y_spanId_validos_en_el_contexto() {
+        ContextView ctx = runYCapturaContexto(MockServerHttpRequest.get("/api/users/me").build());
+
+        assertThat(ctx.<String>get(CorrelationIdFilter.CTX_TRACE_ID)).matches("[0-9a-f]{32}");
+        assertThat(ctx.<String>get(CorrelationIdFilter.CTX_SPAN_ID)).matches("[0-9a-f]{16}");
     }
 
     @Test
