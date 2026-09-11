@@ -18,12 +18,17 @@
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
-G=${G:-http://localhost:8080}
+# La puerta del stack es el proxy reverso, no el gateway: desde que existe
+# nginx, el 8080 no se publica y da connection refused.
+G=${G:-http://localhost:3000}
 DEV=${DEV:-http://localhost:5173}
 ADMIN_EMAIL=${ADMIN_EMAIL:-nuevo.admin@demo.utn.edu.ar}
 ADMIN_PASS=${ADMIN_PASS:-claveNuevaSegura2026}
 # Directorio del compose, para poder mirar los logs de los contenedores.
-COMPOSE_DIR=${COMPOSE_DIR:-$HOME/OneDrive/Escritorio/dev/facultad/api-gateway}
+# El compose dejo de vivir en el repo del gateway: esta en tpi-compose, que es
+# hermano de este repo. Relativo al script y no a $HOME, que no es el mismo en
+# todas las maquinas.
+COMPOSE_DIR=${COMPOSE_DIR:-$(cd "$(dirname "$0")/../../tpi-compose" 2>/dev/null && pwd)}
 STAMP=$(date +%H%M%S)
 
 OK=0; FAIL=0; SKIP=0
