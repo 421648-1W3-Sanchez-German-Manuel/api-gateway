@@ -6,12 +6,14 @@ import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -63,7 +65,7 @@ public final class ProblemDetails {
         body.put("title", title);
         body.put("status", status.value());
         body.put("detail", detail);
-        body.put("instance", exchange.getRequest().getPath().value());
+        body.put("instance", instanceDe(exchange));
 
         String requestId = exchange.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID);
         if (requestId != null) {
@@ -87,6 +89,28 @@ public final class ProblemDetails {
             // errores y devolver un 500 opaco.
             return res.setComplete();
         }
+    }
+
+    /**
+     * El path que pidio el cliente, no el que el Gateway esta sirviendo ahora.
+     *
+     * <p>Importa en un solo caso, pero es el que mas se mira: cuando el breaker
+     * abre, el request se reenvia a {@code /fallback/servicio} y a partir de ahi
+     * {@code exchange.getRequest().getPath()} devuelve ESO. El cliente recibia
+     * {@code "instance": "/fallback/servicio"} — un path que nunca llamo y que
+     * no existe en la API — justo en el error que mas se debuggea entre equipos.
+     */
+    private static String instanceDe(ServerWebExchange exchange) {
+        Object original = exchange.getAttribute(
+                ServerWebExchangeUtils.GATEWAY_ORIGINAL_REQUEST_URL_ATTR);
+        if (original instanceof Collection<?> urls) {
+            for (Object u : urls) {
+                if (u instanceof URI uri && uri.getRawPath() != null) {
+                    return uri.getRawPath();
+                }
+            }
+        }
+        return exchange.getRequest().getPath().value();
     }
 
     private ProblemDetails() {

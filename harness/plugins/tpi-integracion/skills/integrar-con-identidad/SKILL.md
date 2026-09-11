@@ -95,9 +95,14 @@ servicio.
 
 1. Pedí un `clientId` y un `clientSecret` al equipo de Identidad (uno por micro).
 2. Pedí el token declarando **a quién** vas a llamar:
-   `POST /api/users/public/auth/token` con `client_credentials`, el `scope` y
-   `audience: el-micro-destino`.
+   `POST /api/users/public/auth/token` con `clientId`, `clientSecret`,
+   **`grantType: "client_credentials"`**, el `scope` y `audience: el-micro-destino`.
 3. Usalo contra el Gateway como cualquier `Authorization: Bearer`.
+
+⚠️ **`grantType` no es opcional.** Es el campo que más se olvida, y cuando falta
+la respuesta es `400 validation`, que se lee como "mis credenciales están mal" y
+manda a buscar el problema donde no está. El cuerpo completo está en
+`references/contrato.md`.
 
 El `audience` acota el daño: si tu secreto se filtra, ese token sirve solo
 contra ese destino. Un token pedido para `users-service` usado contra otro micro
@@ -105,12 +110,25 @@ recibe `403 invalid-audience`.
 
 **El `clientSecret` jamás va en un frontend.**
 
-## Para entrar a la allowlist
+## Para que el Gateway te descubra y te rutee
 
-Registrarse en Eureka **no** expone tu servicio: hasta que tu `serviceId` esté
-en `gateway.routing.allowlist`, `/api/tutema/**` devuelve 404. Es intencional.
+Son dos cosas distintas y las dos hacen falta.
+
+**Descubrimiento — automático.** Te registrás en la misma Eureka
+(`http://eureka:8761/eureka/` desde la red `tpi-platform`, o
+`http://localhost:8761/eureka/` si corrés desde el IDE) con
+`register-with-eureka: true`, `fetch-registry: false` y
+`healthcheck.enabled: true`. A partir de ahí el Gateway resuelve tus instancias
+solo: escalás, reiniciás o cambiás de IP y no hay que tocar nada.
+
+**Exposición — NO automática, a propósito.** Registrarte no te expone: hasta que
+tu `serviceId` esté en la allowlist del Gateway, `/api/tutema/**` devuelve 404.
 Pedile al equipo de Identidad que te agregue, con el nombre exacto con el que te
-registrás.
+registrás. Con doce equipos sumando servicios, el riesgo de exponer algo sin
+querer pesa más que ahorrarse un trámite.
+
+El checklist completo —nombre, red, readiness y cómo verificar cada paso— está
+en `references/contrato.md`.
 
 ## Kafka es frontera
 

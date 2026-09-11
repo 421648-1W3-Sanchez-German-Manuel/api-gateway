@@ -129,16 +129,42 @@ propaga, no autoriza por rol.
 // POST /api/users/public/auth/token
 {
   "clientId": "tu-servicio",
-  "clientSecret": "...",          // solo en el servidor, jamás en un front
+  "clientSecret": "...",             // solo en el servidor, jamás en un front
+  "grantType": "client_credentials", // OBLIGATORIO. Sin esto: 400 validation
   "scope": "users.profile.read",
-  "audience": "users-service"     // a quién vas a llamar
+  "audience": "users-service"        // a quién vas a llamar
 }
-// -> { "accessToken": "eyJ...", "expiresIn": 300 }
+// -> { "accessToken": "eyJ...", "tokenType": "Bearer", "expiresIn": 300 }
 ```
+
+> ⚠️ **`grantType` es obligatorio y es el error número uno de integración.**
+> Falta en versiones viejas de este documento y en el manifiesto de flujos §08.
+> Si te falta, la respuesta es `400 validation` con
+> `"detail": "grantType: must not be blank"` — no es que tus credenciales estén
+> mal. El único valor aceptado es `client_credentials`.
 
 Dura 5 minutos y lleva `roles: ["MS"]`. El `scope` y el `audience` tienen que
 ser coherentes: pedir un scope que deriva en otro destino se rechaza en la
 emisión, no en el uso.
+
+**El catálogo de scopes es cerrado.** Hoy el único emitible es
+`users.profile.read`, que deriva en `audience: users-service`. Un scope que no
+esté en el catálogo se rechaza al emitir. Sumar uno **no** es configuración: es
+un cambio en `ScopeCatalog.java` y un despliegue de users-service, así que
+pedilo con tiempo.
+
+**El `clientId` y el `clientSecret` los emite Identidad**, uno por micro, con
+`tpi-compose/scripts/seed-service-client.sh <clientId> <scopes>`. El secreto se
+imprime una sola vez y no queda guardado: si se pierde, se regenera.
+
+### Errores que vas a ver usando el token
+
+| respuesta | qué pasó |
+|---|---|
+| `400 validation` | falta `grantType`, o un campo vacío |
+| `401 invalid-credentials` | `clientId` o `clientSecret` mal, o cliente dado de baja |
+| `403 invalid-audience` | pediste el token para otro destino |
+| `403 access-denied` contra `/api/users/profile/{id}` | **también cuando el id no existe** — es anti-enumeración deliberada, no un problema de tus scopes. No hay 404 en esa ruta |
 
 ## Rutas y convenciones
 
@@ -147,6 +173,70 @@ emisión, no en el uso.
 - El path **no se reescribe**: tu micro recibe la URL completa, con el prefijo.
 - Un servicio caído devuelve **503 con `Retry-After`**, no 404: la ruta existe
   aunque la instancia no esté.
+
+> Un detalle que confunde: una ruta inexistente da `404 route-not-found` **solo
+> si el request trae un token válido**. Sin token da `401 not-authenticated`,
+> porque la cadena de Security corre antes que el ruteo y todavía no sabe que la
+> ruta no existe. Para un cliente logueado —que es el caso normal— vale la regla
+> de siempre: un 401 es identidad y nada más.
+
+## Registrarse y que te ruteen · el checklist completo
+
+1. **Nombre.** `spring.application.name = {tu-servicio}`. De ahí sale tu path:
+   se pasa a minúsculas y se le saca el sufijo `-service`, así que
+   `cursos-service` → `/api/cursos/**`. Elegilo una vez y no lo cambies: el
+   mismo string es tu `serviceId` en Eureka, tu entrada en la allowlist, tu
+   `audience` y tu `X-Service-Id`.
+
+2. **Registro.** Apuntá a la misma Eureka que el resto:
+
+   ```yaml
+   eureka:
+     client:
+       service-url:
+         defaultZone: ${EUREKA_URL:http://eureka:8761/eureka/}
+       register-with-eureka: true
+       fetch-registry: false        # SOLO el Gateway tiene true
+       healthcheck:
+         enabled: true              # publica tu readiness, no el mero heartbeat
+     instance:
+       prefer-ip-address: true
+   ```
+
+   `fetch-registry: false` no es un descuido: vos no resolvés direcciones de
+   nadie, hablás por el Gateway. `healthcheck.enabled: true` es lo que hace que
+   una instancia a medio arrancar salga del balanceo en vez de recibir tráfico y
+   contestar 500.
+
+3. **Red.** En el compose, `expose:` y **nunca `ports:`**, en la red
+   `tpi-platform`. Si levantás tu propio `docker-compose.yml`, declarala externa:
+
+   ```yaml
+   networks:
+     tpi-platform:
+       external: true
+   ```
+
+   La crea el stack de Identidad, así que ese tiene que estar arriba primero.
+   Si en cambio corrés tu micro desde el IDE, Eureka está publicada en
+   `http://localhost:8761/eureka/`.
+
+4. **Readiness.** `GET /actuator/health/readiness` tiene que contestar, en el
+   management port. Es lo que mira Eureka y lo que mira el compose.
+
+5. **Pedir el alta en la allowlist.** Con el nombre exacto. Hasta que Identidad
+   te agregue, `/api/{tu-servicio}/**` devuelve **404**, estés registrado o no.
+   Registrarse y estar expuesto son dos cosas distintas, a propósito.
+
+6. **Verificar.** Con el stack arriba, contra la puerta (`localhost:3000`):
+
+   ```bash
+   curl -s http://localhost:8761/eureka/apps | grep -o '<name>[^<]*</name>'   # ¿te registraste?
+   curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/api/cursos/loquesea
+   #   404 -> no estás en la allowlist
+   #   503 -> estás en la allowlist pero sin instancias UP
+   #   401 -> estás ruteado (falta el token, que es lo esperable sin uno)
+   ```
 
 ## Estados de cuenta que vas a ver
 

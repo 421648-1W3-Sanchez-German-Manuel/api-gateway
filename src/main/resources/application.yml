@@ -25,12 +25,35 @@ spring:
     gateway:
       server:
         webflux:
-          # DEC-42 - the breaker is a default filter, so every route the
-          # locator generates gets it. statusCodes is NOT optional: the
-          # CircuitBreaker filter only reacts to exceptions in the reactive
-          # chain, so without it a 500 from the backend travels through
-          # untouched and the breaker never opens.
+          # DEC-42 - son default filters, asi que los recibe TODA ruta que el
+          # locator genere, incluidas las de los servicios que se sumen despues.
+          #
+          # El ORDEN de esta lista es el orden de la cadena: el primero
+          # es el mas externo. Sale asi del manifiesto (§"patrones aplicados"):
+          # rate limit -> bulkhead -> timeout -> retry -> circuit breaker -> fallback.
+          # El rate limit y el bulkhead son GlobalFilter (@Order 80 y 90); el
+          # timeout es el TimeLimiter de ResilienceConfig; los otros dos, esto.
           default-filters:
+            # Solo GET: el unico verbo idempotente por definicion. Reintentar un
+            # POST /registration duplica un alta, y reintentar un POST /2fa/verify
+            # quema un intento del tope de 5. Con el breaker adentro, un reintento
+            # con el circuito abierto falla rapido y cuesta solo el backoff.
+            #
+            # Sin jitter: el filtro de Spring Cloud Gateway no lo expone. Con
+            # retries=1 el thundering herd es acotado, pero si algun dia esto sube
+            # a 3 reintentos hay que reemplazarlo por un filtro propio.
+            - name: Retry
+              args:
+                retries: 1
+                methods: GET
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 500ms
+                  factor: 2
+                  basedOnPreviousValue: false
+            # statusCodes NO es opcional: el filtro CircuitBreaker solo reacciona
+            # a excepciones de la cadena reactiva, asi que sin esto un 500 del
+            # backend pasa de largo y el breaker nunca abre.
             - name: CircuitBreaker
               args:
                 name: porServicio
@@ -88,10 +111,17 @@ gateway:
   routing:
     # DEC-06 - the ONE source of the allowlist. AllowlistRouteLocator reads it
     # to generate the routes, and the guards and ServiceAudienceFilter read it
-    # to decide. Adding a service is adding ONE line here.
-    allowlist:
-      - users-service
-      - echo-service
+    # to decide.
+    #
+    # Descubrimiento y exposicion son cosas distintas (manifiesto del Gateway
+    # §04). Que un servicio se registre en Eureka NO lo expone: el gateway lo
+    # rutea recien cuando su serviceId esta en esta lista. Fuera de ella, 404.
+    # Es friccion a proposito, con doce equipos sumando servicios.
+    #
+    # La lista se sobreescribe entera con GATEWAY_ALLOWLIST (separada por comas)
+    # para que dar de alta un equipo sea una linea del compose y no un PR a este
+    # repo. Sigue necesitando reiniciar el gateway; nunca es en caliente.
+    allowlist: ${GATEWAY_ALLOWLIST:users-service,echo-service}
     service-id-suffix: "-service"
     path-prefix: "/api"
 
@@ -102,6 +132,17 @@ gateway:
       - X-Service-Id
       - X-User-Roles
       - X-Service-Scopes
+
+  # DEC-42 - concurrencia maxima por destino. Ver BulkheadFilter: el breaker
+  # mide fallas y el bulkhead mide ocupacion, y un destino lento que todavia no
+  # falla se come el pool del Gateway sin que el breaker se entere.
+  # Orden de magnitud para los 120 concurrentes de RF-NFR-03, sin calibrar.
+  bulkhead:
+    enabled: ${BULKHEAD_ENABLED:true}
+    max-concurrent-calls: ${BULKHEAD_MAX_CONCURRENT:64}
+    # 0 = rechaza en el acto. Encolar esperando un permiso es lo que el bulkhead
+    # viene a evitar: la request que espera igual ocupa memoria y conexion.
+    max-wait: 0ms
 
   rate-limit:
     enabled: true
@@ -120,7 +161,17 @@ gateway:
         key: IP
         capacity: ${RATE_LIMIT_REGISTRATION_CAPACITY:10}
         refill-per-minute: ${RATE_LIMIT_REGISTRATION_REFILL:10}
-    trusted-proxies: []                 # DEC-24 - to resolve X-Forwarded-For
+    # DEC-24 - de donde sale la IP real para el bucket por IP.
+    #
+    # Con el proxy reverso adelante esto YA NO PUEDE quedar vacio: si el gateway
+    # no confia en el hop anterior, ignora X-Forwarded-For y toma la IP de nginx,
+    # que es la misma para todo el mundo. El bucket por IP pasaria a ser un
+    # bucket global y el primer script que martille /auth deja sin login a todos.
+    #
+    # El default cubre el rango de redes bridge de Docker. Es amplio a proposito
+    # y es seguro porque el gateway no publica puerto: el unico que puede
+    # mandarle un request es nginx, que vive con el en la red tpi-edge.
+    trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:172.16.0.0/12,127.0.0.1/32}
 
 # ---------------------------------------------------------------------------
 # Every lot adds its own block here. This file has ONE owner (see
@@ -138,6 +189,12 @@ eureka:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
     register-with-eureka: true
     fetch-registry: true          # the gateway is the ONLY one that needs the registry
+    # Manifiesto del Gateway §10. Sin esto Eureka marca UP con el solo heartbeat,
+    # que dice "el proceso vive", no "puede atender". Una instancia con readiness
+    # DOWN -sin base, sin Redis, todavia arrancando- seguiria recibiendo trafico
+    # del balanceador. Con esto, el estado que Eureka publica es el de Actuator.
+    healthcheck:
+      enabled: true
   instance:
     prefer-ip-address: true
 
@@ -155,8 +212,18 @@ management:
     port: ${MANAGEMENT_PORT:8081}
   endpoints:
     web:
+      # `gateway` estaba en esta lista y NO hacia nada: con Boot 4.1 /
+      # Spring Cloud 2025.1.3 el endpoint no se registra (el actuator expone
+      # cuatro endpoints y /actuator/gateway/routes da 404). Config muerta que
+      # hace creer que hay una forma de ver la tabla de rutas, y no la hay.
+      #
+      # Para saber si un servicio esta ruteado, se pregunta por la puerta:
+      #   404 route-not-found  -> no esta en la allowlist
+      #   503 service-unavailable -> esta en la allowlist, sin instancias UP
+      #   cualquier otra cosa  -> esta ruteado y contesto el destino
+      # Y para ver quien esta registrado: http://localhost:8761/eureka/apps
       exposure:
-        include: health,info,prometheus,gateway
+        include: health,info,prometheus
   endpoint:
     health:
       probes:
