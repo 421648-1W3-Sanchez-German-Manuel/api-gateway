@@ -25,7 +25,7 @@ public record PrincipalContext(PrincipalType type, String subject, List<String> 
         if (type == PrincipalType.USER) {
             return new PrincipalContext(type, jwt.getSubject(), roles, List.of(),
                     jwt.getClaimAsString("sid"), jwt.getClaimAsString("est"),
-                    jwt.getClaim("pwd"), jwt.getClaim("onb"), null);
+                    booleanoDe(jwt, "pwd"), booleanoDe(jwt, "onb"), null);
         }
 
         List<String> scopes = normalize(Arrays.asList(
@@ -46,6 +46,25 @@ public record PrincipalContext(PrincipalType type, String subject, List<String> 
                 .distinct()
                 .reduce((a, b) -> a + "," + b)
                 .orElse("");
+    }
+
+    /**
+     * Lee un claim booleano sin asumir su tipo JSON. Si users-service emite
+     * {@code "true"} (string) en vez de {@code true}, el
+     * {@code jwt.getClaim("pwd")} generico tira {@code ClassCastException} y
+     * el gateway contesta 500 por un cambio inocente del otro equipo.
+     * Tipo desconocido o ausente -> null (el llamador decide).
+     */
+    public static Boolean booleanoDe(Jwt jwt, String claim) {
+        Object v = jwt.getClaims().get(claim);
+        return switch (v) {
+            case null -> null;
+            case Boolean b -> b;
+            case String s -> "true".equalsIgnoreCase(s.trim()) ? Boolean.TRUE
+                    : "false".equalsIgnoreCase(s.trim()) ? Boolean.FALSE : null;
+            case Number n -> n.intValue() != 0;
+            default -> null;
+        };
     }
 
     private static List<String> normalize(List<String> values) {

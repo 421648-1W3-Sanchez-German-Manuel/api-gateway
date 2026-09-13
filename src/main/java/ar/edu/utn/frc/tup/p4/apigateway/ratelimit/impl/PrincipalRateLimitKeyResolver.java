@@ -6,6 +6,7 @@ import ar.edu.utn.frc.tup.p4.apigateway.ratelimit.RateLimitKeyResolver;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 /**
@@ -48,16 +49,43 @@ public class PrincipalRateLimitKeyResolver implements RateLimitKeyResolver {
                 && props.trustedProxies().stream().anyMatch(cidr -> matches(ip, cidr));
     }
 
-    /** CIDR prefix comparison. Enough for /8, /12, /16 and /32. */
-    private boolean matches(String ip, String cidr) {
-        String base = cidr.split("/")[0];
-        int bits = Integer.parseInt(cidr.split("/")[1]);
-        int octets = bits / 8;
-        String[] a = ip.split("\\.");
-        String[] b = base.split("\\.");
-        if (a.length != 4 || b.length != 4) return false;
-        for (int i = 0; i < octets; i++) if (!a[i].equals(b[i])) return false;
-        return true;
+    /**
+     * Comparacion de prefijo real, a nivel de bits: vale para /20, /22, /27,
+     * IPv6 y cualquier mascara, no solo multiplos de 8. La version anterior
+     * comparaba octetos enteros ({@code bits / 8}), asi que el default
+     * {@code 172.16.0.0/12} funcionaba como un /8: cualquier {@code 172.x.x.x}
+     * contaba como proxy de confianza. CIDR o IP malformada -> no es de
+     * confianza (fail-closed: se ignora X-Forwarded-For).
+     */
+    boolean matches(String ip, String cidr) {
+        try {
+            String[] partes = cidr.split("/");
+            if (partes.length != 2) {
+                return false;
+            }
+            int bits = Integer.parseInt(partes[1].trim());
+            byte[] red = InetAddress.getByName(partes[0].trim()).getAddress();
+            byte[] dir = InetAddress.getByName(ip.trim()).getAddress();
+            if (red.length != dir.length || bits < 0 || bits > red.length * 8) {
+                return false;
+            }
+            int completos = bits / 8;
+            for (int i = 0; i < completos; i++) {
+                if (red[i] != dir[i]) {
+                    return false;
+                }
+            }
+            int resto = bits % 8;
+            if (resto > 0) {
+                int mask = (0xFF << (8 - resto)) & 0xFF;
+                if (((red[completos] & 0xFF) & mask) != ((dir[completos] & 0xFF) & mask)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private String header(ServerWebExchange exchange, String name) {

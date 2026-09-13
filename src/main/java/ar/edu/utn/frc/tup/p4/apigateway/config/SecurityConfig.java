@@ -1,13 +1,12 @@
 package ar.edu.utn.frc.tup.p4.apigateway.config;
 
 import ar.edu.utn.frc.tup.p4.apigateway.config.properties.JwtProperties;
-import ar.edu.utn.frc.tup.p4.apigateway.constants.ErrorTypes;
+import ar.edu.utn.frc.tup.p4.apigateway.routing.PublicRouteMatcher;
 import ar.edu.utn.frc.tup.p4.apigateway.security.IssuerValidator;
-import ar.edu.utn.frc.tup.p4.apigateway.web.ProblemDetails;
+import ar.edu.utn.frc.tup.p4.apigateway.web.SecurityProblemHandlers;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -15,7 +14,6 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.web.server.SecurityWebFilterChain;
-import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
 
 import java.util.List;
 
@@ -58,7 +56,10 @@ public class SecurityConfig {
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .authorizeExchange(ex -> ex
-                        .pathMatchers("/api/*/public/**").permitAll()
+                        // El patron de /api/*/public/** es EL MISMO que usa
+                        // PublicRouteGuard (PublicRouteMatcher): dos
+                        // definiciones de "publico" divergen en los bordes.
+                        .pathMatchers(PublicRouteMatcher.API_PUBLIC_PATTERN).permitAll()
                         .pathMatchers("/.well-known/**").permitAll()
                         .pathMatchers("/actuator/health/**").permitAll()
                         .pathMatchers("/fallback/**").permitAll()
@@ -67,18 +68,10 @@ public class SecurityConfig {
                         // decision lives in the destination's @PreAuthorize.
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(o -> o.jwt(j -> j.jwtDecoder(decoder))
-                        .authenticationEntryPoint(entryPoint()))
+                        .authenticationEntryPoint(SecurityProblemHandlers.authenticationEntryPoint()))
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint(SecurityProblemHandlers.authenticationEntryPoint())
+                        .accessDeniedHandler(SecurityProblemHandlers.accessDeniedHandler()))
                 .build();
-    }
-
-    /**
-     * Un token ausente o invalido (firma, {@code exp}, {@code iss}) -> 401
-     * {@code not-authenticated}. El cuerpo NO nombra el claim que falto: eso va
-     * solo al log (DEC-44). Los rechazos de sesion los emite {@code SessionGuard}.
-     */
-    private ServerAuthenticationEntryPoint entryPoint() {
-        return (exchange, denegado) -> ProblemDetails.write(exchange, HttpStatus.UNAUTHORIZED,
-                ErrorTypes.NOT_AUTHENTICATED, "No autenticado",
-                "El token no es valido o esta ausente.");
     }
 }

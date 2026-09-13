@@ -29,6 +29,11 @@ import java.util.UUID;
  * (RequestLogFilter in users-service). This filter publishes all three ids into
  * the Reactor context; CorrelationMdcConfig turns them into MDC around each
  * signal, so the logback pattern prints them in the gateway's own line.
+ *
+ * <p>Both incoming ids are UNTRUSTED input: they go into the response headers,
+ * the MDC (logs) and downstream. Anything that is not shaped like an id is
+ * discarded and regenerated — accepting it verbatim allows log-line injection
+ * and breaks trace correlation with a malformed `traceparent`.
  */
 @Component
 public class CorrelationIdFilter implements GlobalFilter, Ordered {
@@ -38,14 +43,26 @@ public class CorrelationIdFilter implements GlobalFilter, Ordered {
     public static final String CTX_SPAN_ID = "spanId";
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    /**
+     * What an incoming {@code X-Request-Id} may look like. Letters, digits and
+     * {@code . _ : -}, up to 128 chars: enough for any UUID/trace id, useless
+     * for a log-injection payload (no whitespace, no quotes, no newlines).
+     */
+    private static final java.util.regex.Pattern REQUEST_ID_VALIDO =
+            java.util.regex.Pattern.compile("[A-Za-z0-9._:-]{1,128}");
+
+    /** Strict W3C Trace Context: version 00, lowercase hex, flags 00/01. */
+    private static final java.util.regex.Pattern TRACEPARENT_VALIDO =
+            java.util.regex.Pattern.compile("00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]");
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String requestId = valueOrGenerated(
+        String requestId = validOrGenerated(
                 exchange.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID),
-                () -> UUID.randomUUID().toString());
-        String traceparent = valueOrGenerated(
+                REQUEST_ID_VALIDO, () -> UUID.randomUUID().toString());
+        String traceparent = validOrGenerated(
                 exchange.getRequest().getHeaders().getFirst("traceparent"),
-                CorrelationIdFilter::newTraceparent);
+                TRACEPARENT_VALIDO, CorrelationIdFilter::newTraceparent);
 
         ServerWebExchange mutado = exchange.mutate()
                 .request(r -> r.header(IdentityHeaders.REQUEST_ID, requestId)
@@ -89,8 +106,17 @@ public class CorrelationIdFilter implements GlobalFilter, Ordered {
         return "00-" + hex.formatHex(trace) + "-" + hex.formatHex(span) + "-01";
     }
 
-    private String valueOrGenerated(String entrante, java.util.function.Supplier<String> generador) {
-        return (entrante == null || entrante.isBlank()) ? generador.get() : entrante;
+    private String validOrGenerated(String entrante, java.util.regex.Pattern valido,
+                                        java.util.function.Supplier<String> generador) {
+        if (entrante == null || entrante.isBlank()) {
+            return generador.get();
+        }
+        // Malformed or hostile: regenerate. The value is NOT logged as-is —
+        // it would be the injection itself — only its shape is worth knowing.
+        if (!valido.matcher(entrante).matches()) {
+            return generador.get();
+        }
+        return entrante;
     }
 
     @Override public int getOrder() { return 10; }

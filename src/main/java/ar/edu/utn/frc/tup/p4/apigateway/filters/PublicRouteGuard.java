@@ -1,6 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.filters;
 
-import ar.edu.utn.frc.tup.p4.apigateway.config.properties.GatewayRoutingProperties;
+import ar.edu.utn.frc.tup.p4.apigateway.routing.PublicRouteMatcher;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -20,29 +20,17 @@ public class PublicRouteGuard implements GlobalFilter, Ordered {
 
     public static final String ATTR_ES_PUBLICA = "gateway.rutaPublica";
 
-    private final GatewayRoutingProperties props;
+    private final PublicRouteMatcher matcher;
 
-    public PublicRouteGuard(GatewayRoutingProperties props) {
-        this.props = props;
+    public PublicRouteGuard(PublicRouteMatcher matcher) {
+        this.matcher = matcher;
     }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String path = exchange.getRequest().getPath().value();
-        boolean publica = path.startsWith("/.well-known/")
-                || path.startsWith("/fallback/")
-                || isPublicServiceRoute(path);
+        boolean publica = matcher.esPublica(exchange.getRequest().getPath().value());
         exchange.getAttributes().put(ATTR_ES_PUBLICA, publica);
         return chain.filter(exchange);
-    }
-
-    /** /api/{name}/public/... - the `public` segment is the THIRD one, always. */
-    private boolean isPublicServiceRoute(String path) {
-        String[] parts = path.split("/");
-        // ["", "api", "users", "public", ...]
-        return parts.length >= 4
-                && props.pathPrefix().equals("/" + parts[1])
-                && "public".equals(parts[3]);
     }
 
     @Override

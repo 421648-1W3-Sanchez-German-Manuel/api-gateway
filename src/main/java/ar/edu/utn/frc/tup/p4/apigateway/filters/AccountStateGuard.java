@@ -1,6 +1,9 @@
 package ar.edu.utn.frc.tup.p4.apigateway.filters;
 
+import ar.edu.utn.frc.tup.p4.apigateway.config.properties.AccountGateProperties;
 import ar.edu.utn.frc.tup.p4.apigateway.constants.ErrorTypes;
+import ar.edu.utn.frc.tup.p4.apigateway.constants.PrincipalType;
+import ar.edu.utn.frc.tup.p4.apigateway.security.PrincipalContext;
 import ar.edu.utn.frc.tup.p4.apigateway.web.ProblemDetails;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +13,7 @@ import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -21,11 +25,12 @@ import java.util.Map;
  *
  * The COARSE account-status gate. The whole rule, in one line:
  *
- *   if the principal is a person and the account is not enabled, only
- *   /api/users/** and /api/{x}/public/** are allowed.
+ *   if the principal is a person and the account is not enabled, only the
+ *   exempt prefixes and /api/{x}/public/** are allowed.
  *
- * It composes cleanly because ALL the routes exempt from the three fine gates
- * belong to users-service: the gateway needs to know nobody's routes.
+ * The exempt prefixes live in {@code gateway.account-gate.exempt-prefixes}
+ * (default: users-service): the gateway needs to know nobody's routes, and
+ * onboarding a new micro is config, not a PR here.
  *
  * This does NOT violate R3: R3 says the gateway does not authorize by ROLE, and
  * it does not - it never reads `roles` nor compares role against route. An
@@ -35,7 +40,13 @@ import java.util.Map;
 public class AccountStateGuard implements GlobalFilter, Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(AccountStateGuard.class);
-    private static final String PREFIJO_USERS = "/api/users/";
+    private static final AntPathMatcher MATCHER = new AntPathMatcher();
+
+    private final AccountGateProperties gate;
+
+    public AccountStateGuard(AccountGateProperties gate) {
+        this.gate = gate;
+    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -43,13 +54,13 @@ public class AccountStateGuard implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
         Jwt jwt = exchange.getAttribute(PrivateRouteGuard.ATTR_JWT);
-        if (jwt == null || !"user".equals(jwt.getClaimAsString("type"))) {
+        if (jwt == null || !PrincipalType.USER.matches(jwt.getClaimAsString("type"))) {
             return chain.filter(exchange);   // service: no status to look at
         }
 
         String est = jwt.getClaimAsString("est");
-        Boolean pwd = jwt.getClaim("pwd");
-        Boolean onb = jwt.getClaim("onb");
+        Boolean pwd = PrincipalContext.booleanoDe(jwt, "pwd");
+        Boolean onb = PrincipalContext.booleanoDe(jwt, "onb");
 
         // DEC-44: all three are MANDATORY in a person token. Missing means a
         // users-service that does not emit them yet: it is rejected, and the
@@ -67,8 +78,11 @@ public class AccountStateGuard implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // Not enabled: it can only talk to users-service.
-        if (exchange.getRequest().getPath().value().startsWith(PREFIJO_USERS)) {
+        // Not enabled: it can only talk to the exempt prefixes.
+        String path = exchange.getRequest().getPath().value();
+        boolean exenta = gate.exemptPrefixes().stream()
+                .anyMatch(prefijo -> MATCHER.match(prefijo, path));
+        if (exenta) {
             return chain.filter(exchange);
         }
 

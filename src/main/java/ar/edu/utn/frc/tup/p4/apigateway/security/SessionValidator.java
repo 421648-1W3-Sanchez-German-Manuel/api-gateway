@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.security;
 
+import ar.edu.utn.frc.tup.p4.apigateway.constants.PrincipalType;
 import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository;
 import ar.edu.utn.frc.tup.p4.apigateway.repository.SessionRepository.SessionState;
 import org.slf4j.Logger;
@@ -44,7 +45,7 @@ public class SessionValidator {
     public SessionValidator(SessionRepository sessions) { this.sessions = sessions; }
 
     public Mono<Resultado> verificar(Jwt jwt) {
-        if (!"user".equals(jwt.getClaimAsString("type"))) {
+        if (!PrincipalType.USER.matches(jwt.getClaimAsString("type"))) {
             return Mono.just(Resultado.VIGENTE);   // un token de servicio no lleva sid
         }
 

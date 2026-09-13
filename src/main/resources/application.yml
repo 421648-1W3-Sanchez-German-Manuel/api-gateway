@@ -133,6 +133,12 @@ gateway:
       - X-User-Roles
       - X-Service-Scopes
 
+  # DEC-23 - a donde puede hablar una cuenta NO habilitada. Hoy todo lo exento
+  # es de users-service: si un micro nuevo trae su propio onboarding, se agrega
+  # su prefijo aca (coma-separado por env) en vez de tocar codigo.
+  account-gate:
+    exempt-prefixes: ${GATEWAY_ACCOUNT_EXEMPT:/api/users/**}
+
   # DEC-42 - concurrencia maxima por destino. Ver BulkheadFilter: el breaker
   # mide fallas y el bulkhead mide ocupacion, y un destino lento que todavia no
   # falla se come el pool del Gateway sin que el breaker se entere.
@@ -143,6 +149,17 @@ gateway:
     # 0 = rechaza en el acto. Encolar esperando un permiso es lo que el bulkhead
     # viene a evitar: la request que espera igual ocupa memoria y conexion.
     max-wait: 0ms
+
+  # Umbrales de resiliencia en CONFIG, no en codigo. Calibrar es cambiar env y
+  # recrear el gateway, no un PR con rebuild.
+  resilience:
+    breaker-sliding-window-size: ${GATEWAY_BREAKER_WINDOW:20}
+    breaker-failure-rate-threshold: ${GATEWAY_BREAKER_THRESHOLD:50}
+    breaker-wait-open: ${GATEWAY_BREAKER_WAIT:10s}
+    breaker-half-open-calls: ${GATEWAY_BREAKER_HALF_OPEN:3}
+    time-limiter-timeout: ${GATEWAY_TIMEOUT:3s}
+    bulkhead-retry-after: ${GATEWAY_BULKHEAD_RETRY_AFTER:5s}
+    fallback-retry-after: ${GATEWAY_FALLBACK_RETRY_AFTER:10s}
 
   rate-limit:
     enabled: true
