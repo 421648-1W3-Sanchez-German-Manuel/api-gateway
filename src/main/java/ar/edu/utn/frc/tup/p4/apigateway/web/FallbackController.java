@@ -1,6 +1,7 @@
 package ar.edu.utn.frc.tup.p4.apigateway.web;
 
 import ar.edu.utn.frc.tup.p4.apigateway.constants.ErrorTypes;
+import ar.edu.utn.frc.tup.p4.apigateway.config.properties.ResilienceProperties;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.http.HttpStatus;
@@ -10,7 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.time.Duration;
 import java.util.Locale;
 
 /**
@@ -27,13 +27,30 @@ import java.util.Locale;
 @RestController
 public class FallbackController {
 
+    private final ResilienceProperties resiliencia;
+
+    public FallbackController(ResilienceProperties resiliencia) {
+        this.resiliencia = resiliencia;
+    }
+
     @RequestMapping("/fallback/{serviceId}")
     public Mono<Void> fallback(@PathVariable String serviceId, ServerWebExchange exchange) {
+        if (exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR) == null) {
+            // Invocacion DIRECTA, no el forward del breaker: el forward corre
+            // sobre el exchange ya ruteado y conserva GATEWAY_ROUTE_ATTR. Sin
+            // ruta resuelta no hay destino caido que reportar — contestar 503
+            // aca permite enumerar servicios y ensucia el monitoreo con caidas
+            // falsas. Es un 404 comun, con el type comun.
+            // El serviceId del path NO se copia al cuerpo: es input crudo.
+            return ProblemDetails.write(exchange, HttpStatus.NOT_FOUND,
+                    ErrorTypes.ROUTE_NOT_FOUND, "Ruta inexistente",
+                    "La ruta solicitada no existe.");
+        }
         String destino = destinoReal(exchange, serviceId);
         return ProblemDetails.withRetryAfter(exchange, HttpStatus.SERVICE_UNAVAILABLE,
                 ErrorTypes.SERVICE_UNAVAILABLE, "Servicio no disponible",
                 "El servicio '" + destino + "' no esta respondiendo. Reintente en unos segundos.",
-                Duration.ofSeconds(10));
+                resiliencia.fallbackRetryAfter());
     }
 
     /**

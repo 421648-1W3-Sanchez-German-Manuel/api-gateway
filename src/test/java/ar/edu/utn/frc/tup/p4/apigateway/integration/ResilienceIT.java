@@ -87,8 +87,28 @@ class ResilienceIT extends AbstractGatewayTest {
     }
 
     @Test
-    void the_fallback_returns_a_ProblemDetail_not_an_error_page() {
+    void el_fallback_invocado_DIRECTO_da_404_no_503() {
+        // El fallback solo existe como destino del forward del breaker. Sin
+        // ruta resuelta no hay destino caido que reportar: un 503 directo
+        // permite enumerar servicios y ensucia el monitoreo con caidas falsas.
         cliente.get().uri("/fallback/users-service")
+                .exchange().expectStatus().isNotFound()
+                .expectBody().jsonPath("$.type").value(v ->
+                        org.assertj.core.api.Assertions.assertThat((String) v)
+                                .endsWith("/route-not-found"));
+    }
+
+    @Test
+    void el_fallback_via_breaker_sigue_dando_503_con_ProblemDetail() {
+        DESTINO.setDispatcher(new Dispatcher() {
+            @Override public MockResponse dispatch(RecordedRequest req) {
+                return new MockResponse().setResponseCode(500);
+            }
+        });
+        for (int i = 0; i < 25; i++) {
+            cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + token()).exchange();
+        }
+        cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + token())
                 .exchange().expectStatus().isEqualTo(503)
                 .expectHeader().contentType("application/problem+json");
     }

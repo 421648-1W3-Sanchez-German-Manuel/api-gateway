@@ -1,8 +1,11 @@
 package ar.edu.utn.frc.tup.p4.apigateway.filters;
 
 import ar.edu.utn.frc.tup.p4.apigateway.config.properties.BulkheadProperties;
+import ar.edu.utn.frc.tup.p4.apigateway.config.properties.ResilienceProperties;
 import ar.edu.utn.frc.tup.p4.apigateway.constants.ErrorTypes;
 import ar.edu.utn.frc.tup.p4.apigateway.web.ProblemDetails;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
@@ -21,8 +24,6 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Pipeline step 10 - @Order(9) - DEC-42.
@@ -46,13 +47,24 @@ public class BulkheadFilter implements GlobalFilter, Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(BulkheadFilter.class);
 
-    /** Lo mismo que sugiere el fallback del breaker: que el cliente no vuelva en 100 ms. */
-    private static final Duration REINTENTAR_EN = Duration.ofSeconds(5);
-
     private final BulkheadProperties props;
-    private final Map<String, Bulkhead> porDestino = new ConcurrentHashMap<>();
+    private final ResilienceProperties resiliencia;
+    /**
+     * Uno por destino, con EVICCION. Sin esto cada serviceId que alguna vez
+     * recibe trafico es una entrada eterna: con la allowlist creciendo, el
+     * mapa solo crece. 10 min sin uso o mas de 1000 destinos (muy por encima
+     * de lo real) y se evicta; el siguiente request lo recrea. Evictar con
+     * permisos en vuelo es seguro: el Mono en curso retiene su referencia.
+     */
+    private final Cache<String, Bulkhead> porDestino = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofMinutes(10))
+            .maximumSize(1000)
+            .build();
 
-    public BulkheadFilter(BulkheadProperties props) { this.props = props; }
+    public BulkheadFilter(BulkheadProperties props, ResilienceProperties resiliencia) {
+        this.props = props;
+        this.resiliencia = resiliencia;
+    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -74,13 +86,13 @@ public class BulkheadFilter implements GlobalFilter, Ordered {
                     return ProblemDetails.withRetryAfter(exchange, HttpStatus.SERVICE_UNAVAILABLE,
                             ErrorTypes.SERVICE_UNAVAILABLE, "Servicio no disponible",
                             "El servicio '" + destino + "' esta saturado. Reintente en unos segundos.",
-                            REINTENTAR_EN);
+                            resiliencia.bulkheadRetryAfter());
                 });
     }
 
     /** Uno por destino, creado la primera vez que ese destino recibe trafico. */
     private Bulkhead bulkheadDe(String destino) {
-        return porDestino.computeIfAbsent(destino, id -> Bulkhead.of(id, BulkheadConfig.custom()
+        return porDestino.get(destino, id -> Bulkhead.of(id, BulkheadConfig.custom()
                 .maxConcurrentCalls(props.maxConcurrentCalls())
                 .maxWaitDuration(props.maxWait() == null ? Duration.ZERO : props.maxWait())
                 .build()));

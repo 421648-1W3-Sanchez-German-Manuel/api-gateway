@@ -84,9 +84,17 @@ goes into the MDC.
 
 ## CORS
 
-`allow-credentials: false` — the token travels in `Authorization`, not in a
-cookie. Allowed origins are configuration, not code. The `OPTIONS` preflight
-carries no `Authorization` header, so it is answered **before** the guards.
+There is deliberately NO CORS configuration in this service: the browser only
+talks to the nginx proxy on `:3000` (front and API on the same origin), so
+there is no preflight and nothing to configure. `SecurityConfig` has no
+`cors()` block and `application.yml` has no CORS section — that is the current
+state, not an omission.
+
+If the gateway is ever exposed directly (another SPA, a browser client outside
+the proxy), an `OPTIONS` preflight without `Authorization` hits the guards and
+dies with 401. At that point CORS must be implemented (origins by
+configuration, `allow-credentials: false` since the token travels in
+`Authorization`, preflight answered before the guards) — not before.
 
 ## Documentation
 

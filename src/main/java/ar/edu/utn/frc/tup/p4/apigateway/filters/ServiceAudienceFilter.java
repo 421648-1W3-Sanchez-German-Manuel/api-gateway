@@ -1,6 +1,7 @@
 package ar.edu.utn.frc.tup.p4.apigateway.filters;
 
 import ar.edu.utn.frc.tup.p4.apigateway.constants.ErrorTypes;
+import ar.edu.utn.frc.tup.p4.apigateway.constants.PrincipalType;
 import ar.edu.utn.frc.tup.p4.apigateway.web.ProblemDetails;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,7 @@ public class ServiceAudienceFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         Jwt jwt = exchange.getAttribute(PrivateRouteGuard.ATTR_JWT);
         // Only type: service. A person token carries no aud, and must not (DEC-36).
-        if (jwt == null || !"service".equals(jwt.getClaimAsString("type"))) {
+        if (jwt == null || !PrincipalType.SERVICE.matches(jwt.getClaimAsString("type"))) {
             return chain.filter(exchange);
         }
 

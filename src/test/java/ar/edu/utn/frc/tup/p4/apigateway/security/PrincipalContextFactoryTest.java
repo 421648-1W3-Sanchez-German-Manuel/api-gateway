@@ -83,4 +83,35 @@ class PrincipalContextFactoryTest {
         assertThat(p.sid()).isNull();
         assertThat(p.est()).isNull();
     }
+
+    @Test
+    void un_claim_booleano_como_string_no_rompe_el_parseo() {
+        // Si users-service emite "true" (string) en vez de true, el
+        // getClaim generico tira ClassCastException y el gateway da 500.
+        Jwt jwt = base().subject("s").claim("type", "user")
+                .claim("roles", List.of("STUDENT")).claim("sid", "s")
+                .claim("est", "ACTIVE").claim("pwd", "true").claim("onb", "false").build();
+
+        PrincipalContext p = PrincipalContext.from(jwt);
+        assertThat(p.pwd()).isTrue();
+        assertThat(p.onb()).isFalse();
+    }
+
+    @Test
+    void un_claim_booleano_con_tipo_raro_da_null_no_excepcion() {
+        Jwt jwt = base().subject("s").claim("type", "user")
+                .claim("roles", List.of("STUDENT")).claim("sid", "s")
+                .claim("est", "ACTIVE").claim("pwd", List.of("si")).claim("onb", false).build();
+
+        assertThat(PrincipalContext.booleanoDe(jwt, "pwd")).isNull();
+        assertThat(PrincipalContext.booleanoDe(jwt, "ausente")).isNull();
+    }
+
+    @Test
+    void matches_es_null_safe_y_case_sensitive() {
+        assertThat(PrincipalType.USER.matches("user")).isTrue();
+        assertThat(PrincipalType.USER.matches("User")).isFalse();
+        assertThat(PrincipalType.USER.matches(null)).isFalse();
+        assertThat(PrincipalType.SERVICE.matches("service")).isTrue();
+    }
 }

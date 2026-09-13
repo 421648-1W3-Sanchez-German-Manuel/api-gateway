@@ -56,6 +56,46 @@ class CorrelationIdFilterTest {
     }
 
     @Test
+    void un_X_Request_Id_con_salto_de_linea_se_REGENERA_no_se_propaga() {
+        // Log-line injection: the id ends up verbatim in the MDC and in the
+        // response header. Anything outside the allowlist is discarded.
+        var mutado = run(MockServerHttpRequest.get("/api/users/me")
+                .header(IdentityHeaders.REQUEST_ID, "abc\nfalso INFO LINEA-INYECTADA").build());
+
+        String propagado = mutado.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID);
+        assertThat(propagado).doesNotContain("\n").doesNotContain("INYECTADA");
+    }
+
+    @Test
+    void un_X_Request_Id_gigante_se_REGENERA() {
+        var mutado = run(MockServerHttpRequest.get("/api/users/me")
+                .header(IdentityHeaders.REQUEST_ID, "a".repeat(4096)).build());
+
+        assertThat(mutado.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID))
+                .hasSizeLessThanOrEqualTo(128);
+    }
+
+    @Test
+    void un_traceparent_malformado_se_REGENERA() {
+        var mutado = run(MockServerHttpRequest.get("/api/users/me")
+                .header("traceparent", "no-es-un-traceparent").build());
+
+        assertThat(mutado.getRequest().getHeaders().getFirst("traceparent"))
+                .matches("00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]");
+    }
+
+    @Test
+    void un_traceparent_con_version_futura_se_REGENERA() {
+        // Only version 00 is parsed downstream (traceId/spanId by position).
+        // Accepting an unknown version preserves a trail we cannot read.
+        var mutado = run(MockServerHttpRequest.get("/api/users/me")
+                .header("traceparent", "cc-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01").build());
+
+        assertThat(mutado.getRequest().getHeaders().getFirst("traceparent"))
+                .startsWith("00-");
+    }
+
+    @Test
     void publica_el_traceId_y_el_spanId_del_traceparent_en_el_contexto() {
         String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
         ContextView ctx = runYCapturaContexto(MockServerHttpRequest.get("/api/users/me")
