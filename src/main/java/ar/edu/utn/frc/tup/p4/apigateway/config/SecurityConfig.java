@@ -62,6 +62,7 @@ public class SecurityConfig {
                         .pathMatchers(PublicRouteMatcher.API_PUBLIC_PATTERN).permitAll()
                         .pathMatchers("/.well-known/**").permitAll()
                         .pathMatchers("/actuator/health/**").permitAll()
+                        .pathMatchers("/actuator/prometheus").permitAll()
                         .pathMatchers("/fallback/**").permitAll()
                         // R3: NO hasRole/hasAuthority here. Everything private
                         // is authenticated() and nothing more. The role
