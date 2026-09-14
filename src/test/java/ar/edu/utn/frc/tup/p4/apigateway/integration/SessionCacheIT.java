@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,7 @@ class SessionCacheIT extends AbstractGatewayTest {
 
         // Primer request con Redis vivo: es el que llena la cache.
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + token)
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                 .exchange().expectStatus().isOk();
 
         var docker = REDIS.getDockerClient();
@@ -54,7 +55,7 @@ class SessionCacheIT extends AbstractGatewayTest {
             // 1) Dentro de los 3s: la cache responde y el request pasa. Esto es
             //    el valor de DEC-25 - Redis se cayo y el Gateway no.
             cliente.get().uri("/api/users/me")
-                    .header("Authorization", "Bearer " + token)
+                    .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                     .exchange().expectStatus().isOk();
 
             // 2) Pasada la ventana: ya no hay con que verificar, y la respuesta
@@ -62,7 +63,7 @@ class SessionCacheIT extends AbstractGatewayTest {
             Thread.sleep(3500);
 
             cliente.get().uri("/api/users/me")
-                    .header("Authorization", "Bearer " + token)
+                    .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                     .exchange()
                     .expectStatus().isEqualTo(503)
                     .expectHeader().exists("Retry-After");
@@ -82,7 +83,7 @@ class SessionCacheIT extends AbstractGatewayTest {
         String token = TokenFactory.persona(usuario, "sid-1");
 
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + token)
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                 .exchange().expectStatus().isOk();
 
         // Logout: users-service borra la key. Redis sigue vivo.
@@ -91,7 +92,7 @@ class SessionCacheIT extends AbstractGatewayTest {
         Thread.sleep(3500);
 
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + token)
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                 .exchange()
                 .expectStatus().isUnauthorized();
     }

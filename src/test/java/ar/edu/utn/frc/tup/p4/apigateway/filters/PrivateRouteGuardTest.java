@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.filters;
 
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -32,6 +33,13 @@ class PrivateRouteGuardTest {
 
     private HttpStatus run(Jwt token) {
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me").build());
+        // Decision 3 ("Sesion en Cookies"): coherencia() ahora exige type=user
+        // por cookie. Este test no pasa por el converter real, asi que hay que
+        // marcar el canal a mano - de otro modo TODO token de persona, sin
+        // importar que tan bien formado este, se rechazaria como
+        // "persona-por-header" y estos tests dejarian de probar lo que dicen.
+        ex.getAttributes().put(CookieOrHeaderBearerConverter.ATTR_CANAL,
+                CookieOrHeaderBearerConverter.Canal.COOKIE);
         Mono<Void> resultado = guard.filter(ex, e -> Mono.empty());
         if (token != null) {
             // Two-arg constructor: it is the ONLY one that leaves the token

@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class AccountStateGuardIT extends AbstractGatewayTest {
     void onboarding_pendiente_recibe_403_en_una_ruta_de_OTRO_micro() {
         UUID u = UUID.randomUUID();
         cliente.get().uri("/api/cursos/mis-cursos")
-                .header("Authorization", "Bearer " + tokenWithStatus(u, "ACTIVE", false, true))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "ACTIVE", false, true))
                 .exchange().expectStatus().isForbidden()
                 .expectBody().jsonPath("$.type").value(t ->
                         org.assertj.core.api.Assertions.assertThat((String) t)
@@ -42,7 +43,7 @@ class AccountStateGuardIT extends AbstractGatewayTest {
         // exemptions) is users-service's; the gateway applies the coarse one.
         UUID u = UUID.randomUUID();
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + tokenWithStatus(u, "ACTIVE", false, true))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "ACTIVE", false, true))
                 .exchange().expectStatus().isOk();
     }
 
@@ -50,7 +51,7 @@ class AccountStateGuardIT extends AbstractGatewayTest {
     void una_cuenta_PENDIENTE_CURSO_recibe_403_con_el_estado_en_el_cuerpo() {
         UUID u = UUID.randomUUID();
         cliente.get().uri("/api/cursos/mis-cursos")
-                .header("Authorization", "Bearer " + tokenWithStatus(u, "PENDING_COURSE", false, false))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "PENDING_COURSE", false, false))
                 .exchange().expectStatus().isForbidden()
                 .expectBody().jsonPath("$.accountStatus").isEqualTo("PENDING_COURSE");
     }
@@ -59,7 +60,7 @@ class AccountStateGuardIT extends AbstractGatewayTest {
     void debe_cambiar_password_recibe_403_con_su_propio_type() {
         UUID u = UUID.randomUUID();
         cliente.get().uri("/api/cursos/mis-cursos")
-                .header("Authorization", "Bearer " + tokenWithStatus(u, "ACTIVE", true, false))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "ACTIVE", true, false))
                 .exchange().expectStatus().isForbidden()
                 .expectBody().jsonPath("$.type").value(t ->
                         org.assertj.core.api.Assertions.assertThat((String) t)
@@ -70,7 +71,7 @@ class AccountStateGuardIT extends AbstractGatewayTest {
     void una_cuenta_habilitada_pasa_a_cualquier_micro() {
         UUID u = UUID.randomUUID();
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + tokenWithStatus(u, "ACTIVE", false, false))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "ACTIVE", false, false))
                 .exchange().expectStatus().isOk();
     }
 
@@ -84,7 +85,7 @@ class AccountStateGuardIT extends AbstractGatewayTest {
                 b -> b.claim("est", null).claim("pwd", null).claim("onb", null));
 
         cliente.get().uri("/api/cursos/mis-cursos")
-                .header("Authorization", "Bearer " + sinClaims)
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, sinClaims)
                 .exchange().expectStatus().isUnauthorized();
     }
 

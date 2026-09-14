@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,7 @@ class SessionInvalidationIT extends AbstractGatewayTest {
         seedSession(redis, u, "sid-B");
 
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.persona(u, "sid-A"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(u, "sid-A"))
                 .exchange().expectStatus().isUnauthorized()
                 .expectBody().jsonPath("$.type").value(t ->
                         org.assertj.core.api.Assertions.assertThat((String) t)
@@ -47,7 +48,7 @@ class SessionInvalidationIT extends AbstractGatewayTest {
         clearSession(redis, u);
 
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.persona(u, "sid-A"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(u, "sid-A"))
                 .exchange().expectStatus().isUnauthorized()
                 .expectBody().jsonPath("$.type").value(t ->
                         org.assertj.core.api.Assertions.assertThat((String) t)
@@ -73,7 +74,7 @@ class SessionInvalidationIT extends AbstractGatewayTest {
         try {
             // Wait for the 3 s cache (DEC-25) to expire before asserting.
             Thread.sleep(3500);
-            cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + token)
+            cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                     .exchange()
                     .expectStatus().isEqualTo(503)
                     .expectHeader().exists("Retry-After");

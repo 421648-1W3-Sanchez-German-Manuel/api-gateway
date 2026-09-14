@@ -61,6 +61,10 @@ public class IdentityPropagationFilter implements GlobalFilter, Ordered {
                 }
             }
             // The original Authorization is NOT touched: forwarded as is (DEC-03).
+            // Since the "Sesion en Cookies" cutover (decision 3), this only ever
+            // has something to forward for a service token: a person token is
+            // rejected unless it arrived via the fu_at cookie, which never
+            // populates Authorization on the incoming request in the first place.
         }).build();
 
         return chain.filter(mutado);

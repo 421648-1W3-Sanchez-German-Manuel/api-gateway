@@ -33,6 +33,18 @@ public class SessionGuard implements WebFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        // Igual que PrivateRouteGuard/AccountStateGuard: una ruta publica no
+        // necesita sesion vigente, es la que la CREA o la ROTA (login, 2fa,
+        // refresh). Sin este salteo, una cookie fu_at vieja -de una sesion ya
+        // superada- que el navegador adjunta solo porque comparte origen
+        // (no por eleccion del frontend, como pasaba con el header) rechaza
+        // el intento de login NUEVO por la sesion VIEJA. Antes de las cookies
+        // esto nunca se disparaba: el interceptor jamas mandaba el header
+        // Authorization a una ruta publica.
+        if (Boolean.TRUE.equals(exchange.getAttribute(PublicRouteGuard.ATTR_ES_PUBLICA))) {
+            return chain.filter(exchange);
+        }
+
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .filter(Authentication::isAuthenticated)

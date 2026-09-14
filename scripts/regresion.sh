@@ -15,6 +15,15 @@
 #
 # Credenciales del ADMIN por variable de entorno, con default:
 #   ADMIN_EMAIL=... ADMIN_PASS=... bash scripts/regresion.sh
+#
+# Spec "Sesion en Cookies": la sesion de persona ya NO viaja en el body
+# (accessToken/refreshToken) ni por header Authorization — vive en las
+# cookies HttpOnly fu_at/fu_rt, y el Gateway rechaza un token de persona que
+# llegue por header (decision 3). Por eso "el token" de cada login pasa a ser
+# un cookie jar de curl: status()/body() lo leen y lo actualizan en cada
+# llamada (-b/-c al mismo archivo), igual que un navegador. Los tokens de
+# SERVICIO (client_credentials) no cambian: siguen siendo Bearer por header,
+# porque nunca hay un navegador de por medio.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -33,6 +42,11 @@ STAMP=$(date +%H%M%S)
 
 OK=0; FAIL=0; SKIP=0
 FALLIDOS=()
+
+# Cookie jars de cada login: se borran todos al salir, con éxito o sin él.
+JARS=()
+limpiar_jars() { [ "${#JARS[@]}" -gt 0 ] && rm -f "${JARS[@]}" 2>/dev/null; }
+trap limpiar_jars EXIT
 
 # --- helpers ---------------------------------------------------------------
 
@@ -59,26 +73,42 @@ okc() {
 skip() { printf '  \033[33m—\033[0m %-52s %s\n' "$1" "$2"; SKIP=$((SKIP+1)); }
 sec()  { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-# status <method> <path> [body] [token]
+# status <method> <path> [body] [jar|bearer]
+#
+# El 4to argumento sirve dos cosas distintas, porque el sistema ahora tiene
+# dos canales legitimos: si es la ruta de un cookie jar existente (creado por
+# login(), abajo) se manda como cookie -b/-c; si no existe ese archivo, se
+# manda tal cual como Authorization: Bearer — es lo que sigue usando un token
+# de SERVICIO (client_credentials), que nunca pasa por un cookie jar.
 status() {
   local m=$1 p=$2 b=${3:-} t=${4:-}
   local args=(-s -o /dev/null -w '%{http_code}' -X "$m" "$G$p")
   [ -n "$b" ] && args+=(-H 'Content-Type: application/json' -d "$b")
-  [ -n "$t" ] && args+=(-H "Authorization: Bearer $t")
+  if [ -n "$t" ]; then
+    if [ -f "$t" ]; then args+=(-b "$t" -c "$t"); else args+=(-H "Authorization: Bearer $t"); fi
+  fi
   curl "${args[@]}"
 }
 
-# body <method> <path> [body] [token]
+# body <method> <path> [body] [jar|bearer]  — misma regla que status().
 body() {
   local m=$1 p=$2 b=${3:-} t=${4:-}
   local args=(-s -X "$m" "$G$p")
   [ -n "$b" ] && args+=(-H 'Content-Type: application/json' -d "$b")
-  [ -n "$t" ] && args+=(-H "Authorization: Bearer $t")
+  if [ -n "$t" ]; then
+    if [ -f "$t" ]; then args+=(-b "$t" -c "$t"); else args+=(-H "Authorization: Bearer $t"); fi
+  fi
   curl "${args[@]}"
 }
 
 json() { echo "$1" | grep -oE "\"$2\":\"[^\"]+" | head -1 | cut -d'"' -f4; }
+# jsonnum <json> <campo> — para campos numéricos (expiresIn), que json() no
+# matchea porque busca un valor entre comillas.
+jsonnum() { echo "$1" | grep -oE "\"$2\":[0-9]+" | head -1 | cut -d: -f2; }
 tipo() { echo "$1" | grep -oE '"type":"[^"]+' | head -1 | sed 's|.*/||'; }
+# cookie_valor <jar> <nombre> — lee el valor de una cookie del jar (formato
+# Netscape de curl: 7 columnas separadas por tab, nombre en la 6ta).
+cookie_valor() { awk -F'\t' -v n="$2" '$6==n{v=$7} END{print v}' "$1"; }
 
 # outbox <email> <code|token>
 # /dev/outbox NO devuelve el evento de Kafka: devuelve una proyeccion del
@@ -89,19 +119,24 @@ outbox() {
   curl -s "$DEV/dev/outbox?email=$1" | grep -oE "\"$2\":\"[^\"]+" | head -1 | cut -d'"' -f4
 }
 
-# login completo en dos fases -> imprime "accessToken refreshToken"
+# login completo en dos fases -> imprime la RUTA de un cookie jar con la
+# sesion ya puesta (fu_at + fu_rt). Ya no hay accessToken/refreshToken que
+# imprimir: viven en las cookies que este mismo jar acumula.
 login() {
   local d
   d=$(json "$(body POST /api/users/public/auth/login "{\"email\":\"$1\",\"password\":\"$2\"}")" challengeId)
   [ -z "$d" ] && return 1
   local c; c=$(outbox "$1" code)
-  local r; r=$(body POST /api/users/public/auth/2fa/verify "{\"challengeId\":\"$d\",\"code\":\"$c\"}")
+  [ -z "$c" ] && return 1
+  local jar; jar=$(mktemp)
+  JARS+=("$jar")
+  body POST /api/users/public/auth/2fa/verify "{\"challengeId\":\"$d\",\"code\":\"$c\"}" "$jar" >/dev/null
   # DEC-25: el Gateway cachea el estado de sesion 3 s. Recien logueado, todavia
   # tiene cacheado el sid ANTERIOR de esta persona, asi que el token nuevo puede
   # dar 401 durante esa ventana. Sin esta espera los checks fallan de forma
   # intermitente y el sistema parece roto cuando esta bien.
   sleep 4
-  echo "$(json "$r" accessToken) $(json "$r" refreshToken)"
+  echo "$jar"
 }
 
 # --- 0 · el stack responde -------------------------------------------------
@@ -175,11 +210,14 @@ okc "code 2FA incorrecto" "invalid-code" \
   "$(tipo "$(body POST /api/users/public/auth/2fa/verify "{\"challengeId\":\"$D\",\"code\":\"000000\"}")")"
 
 C=$(outbox "$AL" code)
-TOKENS=$(body POST /api/users/public/auth/2fa/verify "{\"challengeId\":\"$D\",\"code\":\"$C\"}")
-AT=$(json "$TOKENS" accessToken); RT=$(json "$TOKENS" refreshToken)
-[ -n "$AT" ] && ok "fase 2 devuelve tokens" "si" "si" || ok "fase 2 devuelve tokens" "si" "no"
+JAR=$(mktemp); JARS+=("$JAR")
+TOKENS=$(body POST /api/users/public/auth/2fa/verify "{\"challengeId\":\"$D\",\"code\":\"$C\"}" "$JAR")
+EI=$(jsonnum "$TOKENS" expiresIn)
+[ -n "$EI" ] && ok "fase 2 devuelve expiresIn (nunca accessToken)" "si" "si" \
+             || ok "fase 2 devuelve expiresIn (nunca accessToken)" "si" "no"
+okc "el body de fase 2 NUNCA trae accessToken" "" "$(echo "$TOKENS" | grep -o accessToken)"
 
-ME=$(body GET /api/users/me "" "$AT")
+ME=$(body GET /api/users/me "" "$JAR")
 okc "GET /me responde"          "$AL"              "$ME"
 okc "el alumno queda PENDING_COURSE" "PENDING_COURSE" "$ME"
 
@@ -187,40 +225,50 @@ okc "el alumno queda PENDING_COURSE" "PENDING_COURSE" "$ME"
 
 sec "3 · Gates de cuenta"
 okc "cuenta pendiente NO alcanza otro micro" "pending-account" \
-  "$(tipo "$(body GET /api/echo/quien-soy "" "$AT")")"
-ok  "cuenta pendiente SI alcanza /me" 200 "$(status GET /api/users/me "" "$AT")"
+  "$(tipo "$(body GET /api/echo/quien-soy "" "$JAR")")"
+ok  "cuenta pendiente SI alcanza /me" 200 "$(status GET /api/users/me "" "$JAR")"
 
 # --- 4 · sesión: refresh, rotación, única -----------------------------------
 
 sec "4 · Sesión"
-NT=$(body POST /api/users/public/auth/refresh "{\"refreshToken\":\"$RT\"}")
-ok  "refresh devuelve un par nuevo" 200 "$(status POST /api/users/public/auth/refresh "{\"refreshToken\":\"$(json "$NT" refreshToken)\"}")"
+# Copia del jar ANTES de refrescar: se necesita el fu_rt viejo, ya rotado,
+# para probar la deteccion de reuso — el jar activo se pisa con el nuevo.
+JAR_VIEJO=$(mktemp); JARS+=("$JAR_VIEJO"); cp "$JAR" "$JAR_VIEJO"
+ok  "refresh devuelve un par nuevo" 200 "$(status POST /api/users/public/auth/refresh "" "$JAR")"
 okc "reusar un refresh rotado" "session-closed" \
-  "$(tipo "$(body POST /api/users/public/auth/refresh "{\"refreshToken\":\"$RT\"}")")"
+  "$(tipo "$(body POST /api/users/public/auth/refresh "" "$JAR_VIEJO")")"
 
-# El reuso mata la familia: hay que re-loguear para seguir.
-read -r AT RT <<< "$(login "$AL" passwordvalida1)"
-ok "logout" 200 "$(status POST /api/users/auth/logout "" "$AT")"
+# El reuso mata la familia: hay que re-loguear para seguir (tambien mata la
+# sesion de $JAR, que comparte familia con el jar viejo).
+JAR=$(login "$AL" passwordvalida1)
+ok "logout" 200 "$(status POST /api/users/auth/logout "" "$JAR")"
 # DEC-25: el Gateway cachea el estado de sesion 3 s. Sin esta espera el token
 # viejo TODAVIA anda y el check parece fallar cuando el sistema esta bien.
 sleep 4
-okc "el token muere con el logout" "session-closed" "$(tipo "$(body GET /api/users/me "" "$AT")")"
+okc "el token muere con el logout" "session-closed" "$(tipo "$(body GET /api/users/me "" "$JAR")")"
 
 # --- 5 · errores: TODOS con type -------------------------------------------
 
 sec "5 · Contrato de errores"
-read -r AT RT <<< "$(login "$AL" passwordvalida1)"
+JAR=$(login "$AL" passwordvalida1)
 okc "ruta inexistente -> 404 route-not-found" "route-not-found" \
-  "$(tipo "$(body GET /api/users/no/existe/tampoco "" "$AT")")"
-ok  "  y el status es 404" 404 "$(status GET /api/users/no/existe/tampoco "" "$AT")"
-okc "verbo equivocado -> 405 con type"  "route-not-found" "$(tipo "$(body GET /api/users/no-existe "" "$AT")")"
-ok  "  y el status es 405" 405 "$(status GET /api/users/no-existe "" "$AT")"
+  "$(tipo "$(body GET /api/users/no/existe/tampoco "" "$JAR")")"
+ok  "  y el status es 404" 404 "$(status GET /api/users/no/existe/tampoco "" "$JAR")"
+okc "verbo equivocado -> 405 con type"  "route-not-found" "$(tipo "$(body GET /api/users/no-existe "" "$JAR")")"
+ok  "  y el status es 405" 405 "$(status GET /api/users/no-existe "" "$JAR")"
 # El id mal formado se prueba en la seccion 8: con una cuenta PENDING_COURSE
 # contesta antes el gate de ESTADO y nunca se llega a convertir el {id}.
 okc "JSON roto -> validation"           "validation" \
   "$(tipo "$(curl -s -X POST $G/api/users/public/auth/login -H 'Content-Type: application/json' -d '{roto')")"
-okc "prefijo fuera de la allowlist"     "route-not-found" "$(tipo "$(body GET /api/nope/x "" "$AT")")"
+okc "prefijo fuera de la allowlist"     "route-not-found" "$(tipo "$(body GET /api/nope/x "" "$JAR")")"
 okc "sin token -> not-authenticated"       "not-authenticated"   "$(tipo "$(body GET /api/users/me)")"
+
+# Decision 3 (spec "Sesion en Cookies"): el MISMO fu_at que recien autentico
+# por cookie tiene que ser rechazado si se lo pone a mano en el header — no
+# es un token invalido, es un token valido por el canal equivocado.
+JAT=$(cookie_valor "$JAR" fu_at)
+okc "el fu_at valido de la cookie, puesto en HEADER -> not-authenticated" "not-authenticated" \
+  "$(tipo "$(curl -s "$G/api/users/me" -H "Authorization: Bearer $JAT")")"
 
 # --- 5b · trazabilidad ------------------------------------------------------
 
@@ -271,22 +319,22 @@ D=$(json "$(body POST /api/users/public/auth/login "{\"email\":\"$AL\",\"passwor
 # --- 8 · operaciones de ADMIN ----------------------------------------------
 
 sec "8 · ADMIN, whitelist y micro↔micro"
-read -r ADT ADR <<< "$(login "$ADMIN_EMAIL" "$ADMIN_PASS")"
-if [ -z "${ADT:-}" ]; then
+ADJAR=$(login "$ADMIN_EMAIL" "$ADMIN_PASS")
+if [ -z "${ADJAR:-}" ]; then
   skip "seccion completa de ADMIN" "no se pudo loguear $ADMIN_EMAIL (ver ADMIN_EMAIL/ADMIN_PASS)"
 else
-  ok "login del ADMIN" 200 "$(status GET /api/users/me "" "$ADT")"
+  ok "login del ADMIN" 200 "$(status GET /api/users/me "" "$ADJAR")"
 
   NUEVO="creado.$STAMP@demo.utn.edu.ar"
   CR=$(body POST /api/users "{\"firstNames\":\"Cre\",\"lastNames\":\"Ado\",\"email\":\"$NUEVO\",
-        \"password\":\"passwordvalida1\",\"role\":\"STUDENT\"}" "$ADT")
+        \"password\":\"passwordvalida1\",\"role\":\"STUDENT\"}" "$ADJAR")
   NID=$(json "$CR" id)
   [ -n "$NID" ] && ok "crear usuario" "si" "si" || ok "crear usuario" "si" "no"
-  ok "cambiar role" 200 "$(status PATCH "/api/users/$NID/role" '{"role":"PROFESSOR"}' "$ADT")"
+  ok "cambiar role" 200 "$(status PATCH "/api/users/$NID/role" '{"role":"PROFESSOR"}' "$ADJAR")"
 
   WL="wl.$STAMP@demo.utn.edu.ar"
-  ok "agregar a la whitelist" 200 "$(status POST /api/users/whitelist "{\"email\":\"$WL\"}" "$ADT")"
-  okc "  y aparece al listar" "$WL" "$(body GET /api/users/whitelist "" "$ADT")"
+  ok "agregar a la whitelist" 200 "$(status POST /api/users/whitelist "{\"email\":\"$WL\"}" "$ADJAR")"
+  okc "  y aparece al listar" "$WL" "$(body GET /api/users/whitelist "" "$ADJAR")"
 
   # El alta de profesor ahora SI tiene que pasar, y activarse por enlace.
   ok "alta de profesor con el email habilitado" 200 "$(status POST /api/users/public/registration/professor \
@@ -295,56 +343,56 @@ else
   PTOK=$(outbox "$WL" token)
   ok "activar al profesor" 200 "$(status POST /api/users/public/registration/activate "{\"token\":\"$PTOK\"}")"
 
-  read -r PT PR <<< "$(login "$WL" passwordvalida1)"
-  okc "el profesor queda ACTIVE" "ACTIVE" "$(body GET /api/users/me "" "$PT")"
+  PJAR=$(login "$WL" passwordvalida1)
+  okc "el profesor queda ACTIVE" "ACTIVE" "$(body GET /api/users/me "" "$PJAR")"
 
   # Onboarding: es lo que habilita al profesor a salir de los gates.
   ok "onboarding del profesor" 200 "$(status PATCH /api/users/me/onboarding \
-    '{"githubUsername":"profe-dev","avatarRef":null,"tourOk":true}' "$PT")"
-  read -r PT PR <<< "$(login "$WL" passwordvalida1)"
+    '{"githubUsername":"profe-dev","avatarRef":null,"tourOk":true}' "$PJAR")"
+  PJAR=$(login "$WL" passwordvalida1)
 
   SOL=$(body POST /api/users/whitelist/requests \
-    "{\"email\":\"otro.$STAMP@demo.utn.edu.ar\",\"reason\":\"regresion\"}" "$PT")
+    "{\"email\":\"otro.$STAMP@demo.utn.edu.ar\",\"reason\":\"regresion\"}" "$PJAR")
   SID=$(json "$SOL" id)
   [ -n "$SID" ] && ok "el profesor pide habilitacion" "si" "si" || ok "el profesor pide habilitacion" "si" "no"
   ok "el admin la resuelve" 200 "$(status PATCH "/api/users/whitelist/requests/$SID" \
-    '{"approve":true,"rejectionReason":null}' "$ADT")"
+    '{"approve":true,"rejectionReason":null}' "$ADJAR")"
   okc "un no-ADMIN no entra a /api/users" "access-denied" \
-    "$(tipo "$(body GET /api/users/whitelist "" "$PT")")"
-  ok  "  y ese 403 sale en problem+json" 403 "$(status GET /api/users/whitelist "" "$PT")"
+    "$(tipo "$(body GET /api/users/whitelist "" "$PJAR")")"
+  ok  "  y ese 403 sale en problem+json" 403 "$(status GET /api/users/whitelist "" "$PJAR")"
   okc "id que no es UUID -> validation" "validation" \
-    "$(tipo "$(body PATCH /api/users/no-es-uuid/role '{"role":"STUDENT"}' "$PT")")"
+    "$(tipo "$(body PATCH /api/users/no-es-uuid/role '{"role":"STUDENT"}' "$PJAR")")"
 
   # --- integración de tres servicios, con una cuenta habilitada ---
-  QS=$(body GET /api/echo/quien-soy "" "$PT")
+  QS=$(body GET /api/echo/quien-soy "" "$PJAR")
   okc "la identidad llega a otro micro"     "X-User-Id"        "$QS"
   okc "  con el role correcto"               "PROFESSOR"         "$QS"
   okc "  y sin headers de servicio"         "\"X-Service-Id\":null" "$QS"
-  PID=$(json "$(body GET /api/users/me "" "$PT")" id)
-  CP=$(body GET "/api/echo/cliente/perfil/$PID" "" "$PT")
+  PID=$(json "$(body GET /api/users/me "" "$PJAR")" id)
+  CP=$(body GET "/api/echo/cliente/perfil/$PID" "" "$PJAR")
   okc "ciclo micro-micro: token de servicio" "obtenido"        "$CP"
   if [[ "$CP" == *"\"email\""* ]]; then
     ok "  el perfil publico NO expone email" "reducido" "expone email"
   else
     ok "  el perfil publico NO expone email" "reducido" "reducido"
   fi
-  okc "el aud contiene el dano"              "RECHAZADO"       "$(body GET /api/echo/cliente/probar-aud-cruzado "" "$PT")"
-  ok  "ruta interna con token de persona"    401 "$(status GET /api/echo/interno "" "$PT")"
+  okc "el aud contiene el dano"              "RECHAZADO"       "$(body GET /api/echo/cliente/probar-aud-cruzado "" "$PJAR")"
+  ok  "ruta interna con token de persona"    401 "$(status GET /api/echo/interno "" "$PJAR")"
 
   # --- el deadlock de gates (RF-USR-01) ---
   ADM2="admin2.$STAMP@demo.utn.edu.ar"
   body POST /api/users "{\"firstNames\":\"Adm\",\"lastNames\":\"Dos\",\"email\":\"$ADM2\",
-        \"password\":\"passwordvalida1\",\"role\":\"ADMIN\"}" "$ADT" >/dev/null
-  read -r A2T A2R <<< "$(login "$ADM2" passwordvalida1)"
-  if [ -z "${A2T:-}" ]; then
+        \"password\":\"passwordvalida1\",\"role\":\"ADMIN\"}" "$ADJAR" >/dev/null
+  A2JAR=$(login "$ADM2" passwordvalida1)
+  if [ -z "${A2JAR:-}" ]; then
     skip "deadlock de gates" "no se pudo loguear el ADMIN recien creado"
   else
-    okc "el ADMIN nuevo debe cambiar password" "\"mustChangePassword\":true" "$(body GET /api/users/me "" "$A2T")"
+    okc "el ADMIN nuevo debe cambiar password" "\"mustChangePassword\":true" "$(body GET /api/users/me "" "$A2JAR")"
     ok "  cambia la password con onboarding pendiente" 200 "$(status POST /api/users/auth/password/change \
-      '{"currentPassword":"passwordvalida1","newPassword":"claveNuevaSegura2026"}' "$A2T")"
-    read -r A2T A2R <<< "$(login "$ADM2" claveNuevaSegura2026)"
+      '{"currentPassword":"passwordvalida1","newPassword":"claveNuevaSegura2026"}' "$A2JAR")"
+    A2JAR=$(login "$ADM2" claveNuevaSegura2026)
     ok "  y completa el onboarding" 200 "$(status PATCH /api/users/me/onboarding \
-      '{"githubUsername":"admin2-dev","avatarRef":null,"tourOk":true}' "$A2T")"
+      '{"githubUsername":"admin2-dev","avatarRef":null,"tourOk":true}' "$A2JAR")"
   fi
 fi
 

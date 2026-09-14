@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,7 @@ class PublicPrivateRouteIT extends AbstractGatewayTest {
     @Test
     void una_ruta_privada_con_token_valido_pasa() {
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + tokenDe(UUID.randomUUID()))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenDe(UUID.randomUUID()))
                 .exchange().expectStatus().isOk();
     }
 }

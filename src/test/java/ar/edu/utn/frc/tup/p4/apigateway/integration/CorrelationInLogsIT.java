@@ -3,6 +3,7 @@ package ar.edu.utn.frc.tup.p4.apigateway.integration;
 import ar.edu.utn.frc.tup.p4.apigateway.constants.IdentityHeaders;
 import ar.edu.utn.frc.tup.p4.apigateway.filters.CorrelationIdFilter;
 import ar.edu.utn.frc.tup.p4.apigateway.filters.LoggingFilter;
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import ch.qos.logback.classic.Logger;
@@ -62,7 +63,7 @@ class CorrelationInLogsIT extends AbstractGatewayTest {
         String mio = "rid-" + UUID.randomUUID();
 
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.persona(usuario, "sid-1"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(usuario, "sid-1"))
                 .header(IdentityHeaders.REQUEST_ID, mio)
                 .exchange()
                 .expectStatus().isOk()
@@ -90,7 +91,7 @@ class CorrelationInLogsIT extends AbstractGatewayTest {
         seedSession(redis, usuario, "sid-1");
 
         var respuesta = cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.persona(usuario, "sid-1"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(usuario, "sid-1"))
                 .exchange()
                 .expectStatus().isOk()
                 .expectHeader().exists(IdentityHeaders.REQUEST_ID)
@@ -117,7 +118,7 @@ class CorrelationInLogsIT extends AbstractGatewayTest {
         String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.persona(usuario, "sid-1"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(usuario, "sid-1"))
                 .header("traceparent", traceparent)
                 .exchange()
                 .expectStatus().isOk();
@@ -142,7 +143,7 @@ class CorrelationInLogsIT extends AbstractGatewayTest {
         seedSession(redis, usuario, "sid-1");
 
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.persona(usuario, "sid-1"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(usuario, "sid-1"))
                 .exchange()
                 .expectStatus().isOk();
 
