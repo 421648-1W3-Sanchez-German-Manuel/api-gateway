@@ -63,6 +63,14 @@ public class SecurityConfig {
                         .pathMatchers("/.well-known/**").permitAll()
                         .pathMatchers("/actuator/health/**").permitAll()
                         .pathMatchers("/fallback/**").permitAll()
+                        // La documentacion: el spec, la pantalla y sus estaticos.
+                        // Anonima a proposito -no se puede pedir el token en la
+                        // pagina que explica como sacarlo- y por eso es UNA sola
+                        // linea: springdoc cuelga todo de /api/docs/** (ver el
+                        // bloque springdoc de application.yml). Abrir el path
+                        // NO abre los endpoints: /api/users/** sigue cayendo en
+                        // anyExchange().authenticated() como antes.
+                        .pathMatchers("/api/docs/**").permitAll()
                         // R3: NO hasRole/hasAuthority here. Everything private
                         // is authenticated() and nothing more. The role
                         // decision lives in the destination's @PreAuthorize.

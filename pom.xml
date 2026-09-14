@@ -15,6 +15,11 @@
     <maven.compiler.release>21</maven.compiler.release>
     <spring-boot.version>4.1.1</spring-boot.version>
     <spring-cloud.version>2025.1.3</spring-cloud.version>
+    <!-- springdoc 2.x esta construido contra Boot 3 y no arranca con Boot 4.
+         La 3.x es la primera linea con parent spring-boot-starter-parent 4.x
+         (la 3.1.1 declara 4.1.0). El artefacto es el -webflux-, no el -webmvc-:
+         este servicio es reactivo y el de MVC ni auto-configura. -->
+    <springdoc.version>3.1.1</springdoc.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
@@ -49,6 +54,11 @@
     <dependency>
       <groupId>org.springframework.cloud</groupId>
       <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
+      <version>${springdoc.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.cloud</groupId>
