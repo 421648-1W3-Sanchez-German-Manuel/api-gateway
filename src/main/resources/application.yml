@@ -236,8 +236,17 @@ springdoc:
     disable-swagger-default-url: true
     # El desplegable. Cada equipo que se suma agrega SU linea aca, con el mismo
     # prefijo publico que ya usa para que el spec pase sin token.
+    # SOLO ASCII en los VALORES de este archivo. No es estetica: un valor con
+    # un caracter no-ASCII sale mojibake en la respuesta ("Tema 01 Â· ..."),
+    # aunque los bytes del archivo sean UTF-8 correctos y la JVM corra con
+    # file.encoding=UTF-8. El mismo caracter puesto en un .java sale bien, asi
+    # que el problema es el loader de YAML, no el encoding del contenedor.
+    #
+    # Hoy no hay ningun otro valor no-ASCII en los application.yml de los dos
+    # repos -- por eso nadie lo habia pisado. Si alguna vez hace falta texto
+    # con acentos, va en un .java, no aca.
     urls:
-      - name: users-service · Tema 01 · Identidad y Usuarios
+      - name: users-service - Tema 01 - Identidad y Usuarios
         url: /api/users/public/v3/api-docs
       - name: api-gateway
         url: /api/docs/v3/api-docs

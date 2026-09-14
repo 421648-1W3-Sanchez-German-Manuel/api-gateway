@@ -76,6 +76,25 @@ class OpenApiIT extends AbstractGatewayTest {
     }
 
     @Test
+    void los_nombres_del_desplegable_salen_sin_mojibake() {
+        // Un valor no-ASCII en application.yml sale mal codificado ("Tema 01
+        // Â· ...") aunque los bytes del archivo sean UTF-8 y la JVM corra con
+        // file.encoding=UTF-8: el loader de YAML no los decodifica como UTF-8.
+        // El mismo caracter en un .java sale bien.
+        //
+        // Se afirma sobre el sintoma y no sobre "es ASCII" porque lo que
+        // importa es que el nombre llegue legible al navegador, venga de donde
+        // venga. La 'Â' es la firma de ese doble encoding.
+        cliente.get().uri(SPEC + "/swagger-config")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(cuerpo -> assertThat(cuerpo)
+                        .as("nombre del desplegable mal codificado")
+                        .doesNotContain("Â"));
+    }
+
+    @Test
     void abrir_la_doc_no_abre_los_endpoints() {
         // El permitAll es de /api/docs/**, no de /api/**. Un caracter de mas en
         // ese patron dejaria la plataforma entera sin autenticacion, y la doc
