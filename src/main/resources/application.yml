@@ -200,6 +200,59 @@ gateway:
 #   resilience4j          -> L10 (breaker, bulkhead, fallback)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# OpenAPI / Swagger UI — LA pantalla de documentacion del subsistema.
+#
+# El gateway casi no tiene endpoints propios (solo el fallback), asi que lo
+# que aporta aca NO es documentar lo suyo: es ser el UNICO lugar donde estan
+# TODAS las APIs. `urls` dibuja el desplegable con un spec por servicio.
+#
+# TODO cuelga de /api/docs/**, y cada pedazo tiene su motivo:
+#
+#   - Empieza con /api/ porque nginx solo proxea /api/, /.well-known/ y /dev/
+#     hacia aca. Cualquier otro path cae en la SPA de Angular y devuelve su
+#     index.html: una pantalla en blanco que no parece un problema de ruteo.
+#   - NO es /api/{servicio}/... a proposito. El locator genera una ruta por
+#     servicio de la allowlist, y "docs" no es un servicio: no matchea ninguna,
+#     asi que el request no se rutea y lo atiende este mismo proceso. Si algun
+#     dia existiera un "docs-service" en la allowlist, esto se lo comeria.
+#   - swagger-ui.path tiene un segmento DE MAS (/ui) a proposito: springdoc
+#     cuelga los recursos estaticos del PADRE de ese path, no del path. Con
+#     /api/docs los assets irian a /api/swagger-ui/** y habria que abrir DOS
+#     agujeros en SecurityConfig; con /api/docs/ui van a /api/docs/swagger-ui/**
+#     y alcanza con uno solo.
+#
+# Las `urls` son RELATIVAS: las resuelve el NAVEGADOR contra el mismo origen
+# (nginx :3000), no este proceso. Poner http://users-service:8082/... apuntaria
+# a un host que solo existe dentro de la red de Docker.
+# ---------------------------------------------------------------------------
+springdoc:
+  api-docs:
+    path: /api/docs/v3/api-docs
+    enabled: ${OPENAPI_ENABLED:true}
+  swagger-ui:
+    path: /api/docs/ui
+    enabled: ${OPENAPI_ENABLED:true}
+    disable-swagger-default-url: true
+    # El desplegable. Cada equipo que se suma agrega SU linea aca, con el mismo
+    # prefijo publico que ya usa para que el spec pase sin token.
+    # SOLO ASCII en los VALORES de este archivo. No es estetica: un valor con
+    # un caracter no-ASCII sale mojibake en la respuesta ("Tema 01 Â· ..."),
+    # aunque los bytes del archivo sean UTF-8 correctos y la JVM corra con
+    # file.encoding=UTF-8. El mismo caracter puesto en un .java sale bien, asi
+    # que el problema es el loader de YAML, no el encoding del contenedor.
+    #
+    # Hoy no hay ningun otro valor no-ASCII en los application.yml de los dos
+    # repos -- por eso nadie lo habia pisado. Si alguna vez hace falta texto
+    # con acentos, va en un .java, no aca.
+    urls:
+      - name: users-service - Tema 01 - Identidad y Usuarios
+        url: /api/users/public/v3/api-docs
+      - name: api-gateway
+        url: /api/docs/v3/api-docs
+    operations-sorter: method
+    tags-sorter: alpha
+
 eureka:
   client:
     service-url:

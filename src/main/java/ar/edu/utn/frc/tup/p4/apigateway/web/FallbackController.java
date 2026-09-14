@@ -2,6 +2,8 @@ package ar.edu.utn.frc.tup.p4.apigateway.web;
 
 import ar.edu.utn.frc.tup.p4.apigateway.constants.ErrorTypes;
 import ar.edu.utn.frc.tup.p4.apigateway.config.properties.ResilienceProperties;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.http.HttpStatus;
@@ -33,6 +35,35 @@ public class FallbackController {
         this.resiliencia = resiliencia;
     }
 
+    /**
+     * Aparece SIETE veces en el spec, una por verbo, y esta bien asi: el
+     * {@code @RequestMapping} no declara {@code method} porque el forward del
+     * breaker conserva el metodo original, asi que cualquier verbo puede caer
+     * aca. Agregarle {@code method = GET} para "limpiar la documentacion"
+     * romperia el fallback de todo POST, PATCH y DELETE — la doc se veria mejor
+     * y el breaker dejaria de contestar en la mitad de los casos.
+     */
+    @Operation(summary = "INTERNO - destino del circuit breaker",
+               description = """
+                       **No se llama directo.** Es a donde el filtro CircuitBreaker hace
+                       `forward:` cuando el destino real esta caido, y su respuesta es el 503
+                       que termina viendo el cliente que pidio OTRA ruta.
+
+                       Invocarlo a mano devuelve **404** `route-not-found`, no 503, y es a
+                       proposito: sin una ruta resuelta en el exchange no hay destino caido que
+                       reportar. Contestar 503 permitiria enumerar servicios y ensuciaria el
+                       monitoreo con caidas falsas.
+
+                       Aparece una vez por verbo porque el forward conserva el metodo original
+                       del request.""")
+    @ApiResponse(responseCode = "503", description = """
+            `type`: `service-unavailable`. El destino no responde. Trae `Retry-After`, y
+            nombra al servicio REAL -no la palabra "servicio" del path-, porque decirle a un
+            equipo que "el servicio 'servicio' no responde" lo manda a buscar algo que no
+            existe.""")
+    @ApiResponse(responseCode = "404", description = """
+            `type`: `route-not-found`. Llamada directa, sin ruta resuelta. El `serviceId` del
+            path NO se copia al cuerpo: es input crudo.""")
     @RequestMapping("/fallback/{serviceId}")
     public Mono<Void> fallback(@PathVariable String serviceId, ServerWebExchange exchange) {
         if (exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR) == null) {
