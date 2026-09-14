@@ -98,6 +98,31 @@ configuration, `allow-credentials: false` since the token travels in
 
 ## Documentation
 
+**The live API reference for the whole subsystem**, with the stack up:
+
+```
+http://localhost:3000/api/docs/ui      # every service, in one dropdown
+```
+
+The gateway hosts it because it is the only process that already knows every
+service and the only one that publishes a port. Each team adds one line to
+`springdoc.swagger-ui.urls` pointing at its own `/api/{name}/public/v3/api-docs`.
+
+Being in that dropdown **does not expose an API** — that is still the allowlist
+(non-negotiable 2). The two lists serve different purposes: documenting a
+service that is not allowlisted gets you a 404 when you press "Try it out", not
+access.
+
+Everything hangs off `/api/docs/**` so that a single `permitAll` covers it. The
+`/ui` segment is not decoration: springdoc serves the static assets from the
+**parent** of `swagger-ui.path`, so `/api/docs` alone would scatter them into
+`/api/swagger-ui/**` and need a second opening. `OpenApiIT` pins both the paths
+and the fact that `/api/users/**` stays closed.
+
+Values in `application.yml` must stay **ASCII**: a non-ASCII one comes back
+mojibake even though the file is valid UTF-8 and the JVM runs UTF-8 — the YAML
+loader is what does not decode it. The same character in a `.java` is fine.
+
 | Document | Contents |
 |---|---|
 | `docs/plans/api-gateway.md` | The implementation plan, task by task |
