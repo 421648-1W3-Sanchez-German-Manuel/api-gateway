@@ -62,6 +62,7 @@ public class SecurityConfig {
                         .pathMatchers(PublicRouteMatcher.API_PUBLIC_PATTERN).permitAll()
                         .pathMatchers("/.well-known/**").permitAll()
                         .pathMatchers("/actuator/health/**").permitAll()
+                        .pathMatchers("/actuator/prometheus").permitAll()
                         .pathMatchers("/fallback/**").permitAll()
                         // La documentacion: el spec, la pantalla y sus estaticos.
                         // Anonima a proposito -no se puede pedir el token en la
