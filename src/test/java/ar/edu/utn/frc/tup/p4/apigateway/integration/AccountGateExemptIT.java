@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class AccountGateExemptIT extends AbstractGatewayTest {
     void con_otra_config_la_cuenta_no_habilitada_pasa_al_prefijo_exento() {
         UUID u = UUID.randomUUID();
         cliente.get().uri("/api/cursos/mis-cursos")
-                .header("Authorization", "Bearer " + pendiente(u))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, pendiente(u))
                 .exchange().expectStatus().isOk();
     }
 
@@ -38,7 +39,7 @@ class AccountGateExemptIT extends AbstractGatewayTest {
     void y_sigue_bloqueada_fuera_del_prefijo_exento() {
         UUID u = UUID.randomUUID();
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + pendiente(u))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, pendiente(u))
                 .exchange().expectStatus().isForbidden()
                 .expectBody().jsonPath("$.accountStatus").isEqualTo("PENDING_COURSE");
     }

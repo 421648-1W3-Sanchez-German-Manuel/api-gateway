@@ -2,6 +2,7 @@ package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
 import ar.edu.utn.frc.tup.p4.apigateway.config.DiscoveryLocatorConfig;
 import ar.edu.utn.frc.tup.p4.apigateway.config.properties.GatewayRoutingProperties;
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -46,7 +47,7 @@ class DiscoveryAllowlistIT extends AbstractGatewayTest {
         // nada. Sin esto el assert de abajo espera un request que nunca llega.
         seedSession(redis, sub, "sid-1");
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.persona(sub, "sid-1"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(sub, "sid-1"))
                 .exchange();
 
         RecordedRequest recibido = ultimoRequestAlDestino();
@@ -62,7 +63,7 @@ class DiscoveryAllowlistIT extends AbstractGatewayTest {
         UUID sub = UUID.randomUUID();
         seedSession(redis, sub, "s");
         cliente.get().uri("/api/otro/lo-que-sea")
-                .header("Authorization", "Bearer " + TokenFactory.persona(sub, "s"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(sub, "s"))
                 .exchange()
                 .expectStatus().isNotFound();
     }

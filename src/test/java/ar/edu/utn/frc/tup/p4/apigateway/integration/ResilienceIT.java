@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -52,10 +53,10 @@ class ResilienceIT extends AbstractGatewayTest {
         String t = token();
         // Fill the breaker's window (slidingWindowSize = 20).
         for (int i = 0; i < 25; i++) {
-            cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + t).exchange();
+            cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, t).exchange();
         }
 
-        cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + t)
+        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, t)
                 .exchange().expectStatus().isEqualTo(503)
                 .expectHeader().exists("Retry-After")
                 .expectBody().jsonPath("$.type").value(v ->
@@ -82,7 +83,7 @@ class ResilienceIT extends AbstractGatewayTest {
             }
         });
 
-        cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + token())
+        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token())
                 .exchange().expectStatus().isEqualTo(503);
     }
 
@@ -106,9 +107,9 @@ class ResilienceIT extends AbstractGatewayTest {
             }
         });
         for (int i = 0; i < 25; i++) {
-            cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + token()).exchange();
+            cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token()).exchange();
         }
-        cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + token())
+        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token())
                 .exchange().expectStatus().isEqualTo(503)
                 .expectHeader().contentType("application/problem+json");
     }

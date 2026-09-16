@@ -2,6 +2,7 @@ package ar.edu.utn.frc.tup.p4.apigateway.config;
 
 import ar.edu.utn.frc.tup.p4.apigateway.config.properties.JwtProperties;
 import ar.edu.utn.frc.tup.p4.apigateway.routing.PublicRouteMatcher;
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.security.IssuerValidator;
 import ar.edu.utn.frc.tup.p4.apigateway.web.SecurityProblemHandlers;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,9 +51,15 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityWebFilterChain chain(ServerHttpSecurity http, ReactiveJwtDecoder decoder) {
+    SecurityWebFilterChain chain(ServerHttpSecurity http, ReactiveJwtDecoder decoder,
+                                  CookieOrHeaderBearerConverter bearerConverter) {
         return http
-                .csrf(ServerHttpSecurity.CsrfSpec::disable)      // API stateless, sin cookies
+                // Decision 1 del spec "Sesion en Cookies": SameSite=Strict +
+                // mismo origen (nginx :3000, sin subdominios) ya cubre CSRF
+                // para el uso real de esta app. Sigue deshabilitado a
+                // proposito, no por descuido - se reabre si el dia de manana
+                // front y Gateway dejan de compartir origen.
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .authorizeExchange(ex -> ex
@@ -77,6 +84,7 @@ public class SecurityConfig {
                         // decision lives in the destination's @PreAuthorize.
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(o -> o.jwt(j -> j.jwtDecoder(decoder))
+                        .bearerTokenConverter(bearerConverter)
                         .authenticationEntryPoint(SecurityProblemHandlers.authenticationEntryPoint()))
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint(SecurityProblemHandlers.authenticationEntryPoint())

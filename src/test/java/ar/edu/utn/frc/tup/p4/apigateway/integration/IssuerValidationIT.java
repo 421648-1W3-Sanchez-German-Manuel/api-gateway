@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.AbstractGatewayTest;
 import ar.edu.utn.frc.tup.p4.apigateway.support.TokenFactory;
 import org.junit.jupiter.api.Test;
@@ -18,7 +19,7 @@ class IssuerValidationIT extends AbstractGatewayTest {
     void un_token_con_iss_distinto_es_rechazado() {
         String malo = TokenFactory.persona(UUID.randomUUID(), "sid-1",
                 b -> b.issuer("otro-emisor"));
-        cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + malo)
+        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, malo)
                 .exchange().expectStatus().isUnauthorized();
     }
 
@@ -27,7 +28,7 @@ class IssuerValidationIT extends AbstractGatewayTest {
         // This is exactly the token an attacker would forge: that is why there
         // validador tolerante que acepte "ausente o correcto".
         String sinIss = TokenFactory.persona(UUID.randomUUID(), "sid-1", b -> b.issuer(null));
-        cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + sinIss)
+        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, sinIss)
                 .exchange().expectStatus().isUnauthorized();
     }
 
@@ -35,7 +36,7 @@ class IssuerValidationIT extends AbstractGatewayTest {
     void un_token_con_algoritmo_distinto_de_RS256_es_rechazado() {
         // "none" included. jws-algorithms: RS256 in the yml covers it.
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.hs256Falso())
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.hs256Falso())
                 .exchange().expectStatus().isUnauthorized();
     }
 
@@ -43,7 +44,7 @@ class IssuerValidationIT extends AbstractGatewayTest {
     void el_cuerpo_del_401_NO_dice_que_claim_falto() {
         // An attacker is not told what the token was missing: that goes to the log.
         String malo = TokenFactory.persona(UUID.randomUUID(), "s", b -> b.issuer("otro"));
-        cliente.get().uri("/api/users/me").header("Authorization", "Bearer " + malo)
+        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, malo)
                 .exchange().expectStatus().isUnauthorized()
                 .expectBody().jsonPath("$.detail").value(d ->
                         org.assertj.core.api.Assertions.assertThat((String) d)

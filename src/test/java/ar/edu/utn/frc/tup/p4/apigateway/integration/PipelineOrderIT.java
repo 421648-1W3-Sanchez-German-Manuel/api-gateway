@@ -1,6 +1,7 @@
 package ar.edu.utn.frc.tup.p4.apigateway.integration;
 
 import ar.edu.utn.frc.tup.p4.apigateway.filters.PrivateRouteGuard;
+import ar.edu.utn.frc.tup.p4.apigateway.security.CookieOrHeaderBearerConverter;
 import ar.edu.utn.frc.tup.p4.apigateway.support.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,7 @@ class PipelineOrderIT extends AbstractGatewayTest {
         UUID u = UUID.randomUUID();
         seedSession(redis, u, "sid-1");
         cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + TokenFactory.persona(u, "sid-1"))
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(u, "sid-1"))
                 .exchange().expectStatus().isOk();
     }
 
