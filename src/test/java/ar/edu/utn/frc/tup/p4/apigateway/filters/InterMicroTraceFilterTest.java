@@ -24,115 +24,115 @@ import static org.mockito.Mockito.*;
 class InterMicroTraceFilterTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final ReactiveListOperations<String, String> lista = mock(ReactiveListOperations.class);
+    private final ReactiveListOperations<String, String> list = mock(ReactiveListOperations.class);
     private final ReactiveStringRedisTemplate redis = mock(ReactiveStringRedisTemplate.class);
-    private final InterMicroTraceFilter filtro = new InterMicroTraceFilter(redis, mapper);
+    private final InterMicroTraceFilter filter = new InterMicroTraceFilter(redis, mapper);
 
-    private Route rutaHacia(String servicio) {
+    private Route routeTo(String service) {
         return Route.async()
-                .id(servicio)
-                .uri(URI.create("lb://" + servicio))
+                .id(service)
+                .uri(URI.create("lb://" + service))
                 .order(0)
                 .predicate(p -> true)
                 .build();
     }
 
     @Test
-    void registra_la_llamada_con_destino_origen_status_y_ms() throws Exception {
-        when(redis.opsForList()).thenReturn(lista);
-        when(lista.leftPush(anyString(), anyString())).thenReturn(Mono.just(1L));
-        when(lista.trim(anyString(), anyLong(), anyLong())).thenReturn(Mono.empty());
+    void records_the_call_with_destination_origin_status_and_ms() throws Exception {
+        when(redis.opsForList()).thenReturn(list);
+        when(list.leftPush(anyString(), anyString())).thenReturn(Mono.just(1L));
+        when(list.trim(anyString(), anyLong(), anyLong())).thenReturn(Mono.empty());
 
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/echo/cliente/perfil/42").build());
-        ex.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, rutaHacia("echo-service"));
+        ex.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, routeTo("echo-service"));
 
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
 
-        verify(lista, timeout(2000)).leftPush(eq(InterMicroTraceFilter.REDIS_KEY), anyString());
+        verify(list, timeout(2000)).leftPush(eq(InterMicroTraceFilter.REDIS_KEY), anyString());
         ArgumentCaptor<String> json = ArgumentCaptor.forClass(String.class);
-        verify(lista).leftPush(eq(InterMicroTraceFilter.REDIS_KEY), json.capture());
+        verify(list).leftPush(eq(InterMicroTraceFilter.REDIS_KEY), json.capture());
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> entrada = mapper.readValue(json.getValue(), Map.class);
-        assertThat(entrada).containsEntry("destino", "echo-service")
+        Map<String, Object> entry = mapper.readValue(json.getValue(), Map.class);
+        assertThat(entry).containsEntry("destino", "echo-service")
                 .containsEntry("origen", "ANON")
                 .containsEntry("metodo", "GET")
                 .containsEntry("path", "/api/echo/cliente/perfil/42")
-                // En el mock la respuesta no se escribe, asi que el status que
-                // ve el filtro es null -> 0. En runtime es el status real.
+                // In the mock the response is not written, so the status the
+                // filter sees is null -> 0. At runtime it is the real status.
                 .containsEntry("status", 0)
                 .containsKey("ms").containsKey("traceId").containsKey("requestId");
     }
 
     @Test
-    void distingue_el_origen_persona_del_origen_servicio() throws Exception {
-        when(redis.opsForList()).thenReturn(lista);
-        when(lista.leftPush(anyString(), anyString())).thenReturn(Mono.just(1L));
-        when(lista.trim(anyString(), anyLong(), anyLong())).thenReturn(Mono.empty());
+    void distinguishes_the_person_origin_from_the_service_origin() throws Exception {
+        when(redis.opsForList()).thenReturn(list);
+        when(list.leftPush(anyString(), anyString())).thenReturn(Mono.just(1L));
+        when(list.trim(anyString(), anyLong(), anyLong())).thenReturn(Mono.empty());
 
-        Jwt servicio = Jwt.withTokenValue("t")
+        Jwt service = Jwt.withTokenValue("t")
                 .header("alg", "RS256")
                 .claim("type", "service")
                 .claim("sub", "echo-service")
                 .build();
 
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/profile/42").build());
-        ex.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, rutaHacia("users-service"));
-        ex.getAttributes().put(PrivateRouteGuard.ATTR_JWT, servicio);
+        ex.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, routeTo("users-service"));
+        ex.getAttributes().put(PrivateRouteGuard.ATTR_JWT, service);
 
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
 
         ArgumentCaptor<String> json = ArgumentCaptor.forClass(String.class);
-        verify(lista, timeout(2000)).leftPush(eq(InterMicroTraceFilter.REDIS_KEY), json.capture());
+        verify(list, timeout(2000)).leftPush(eq(InterMicroTraceFilter.REDIS_KEY), json.capture());
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> entrada = mapper.readValue(json.getValue(), Map.class);
-        assertThat(entrada).containsEntry("origen", "MS")
+        Map<String, Object> entry = mapper.readValue(json.getValue(), Map.class);
+        assertThat(entry).containsEntry("origen", "MS")
                 .containsEntry("actor", "echo-service")
                 .containsEntry("destino", "users-service");
     }
 
     @Test
-    void sin_ruta_resuelta_no_registra() {
+    void without_a_resolved_route_it_does_not_record() {
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me").build());
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
 
         verifyNoInteractions(redis);
     }
 
     @Test
-    void un_redis_caido_no_tumba_el_request() {
-        when(redis.opsForList()).thenReturn(lista);
-        when(lista.leftPush(anyString(), anyString())).thenReturn(Mono.error(new RuntimeException("redis abajo")));
-        when(lista.trim(anyString(), anyLong(), anyLong())).thenReturn(Mono.empty());
+    void a_down_redis_does_not_take_down_the_request() {
+        when(redis.opsForList()).thenReturn(list);
+        when(list.leftPush(anyString(), anyString())).thenReturn(Mono.error(new RuntimeException("redis down")));
+        when(list.trim(anyString(), anyLong(), anyLong())).thenReturn(Mono.empty());
 
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me").build());
-        ex.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, rutaHacia("users-service"));
+        ex.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, routeTo("users-service"));
 
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
     }
 
     @Test
-    void NUNCA_almacena_el_header_Authorization() throws Exception {
-        when(redis.opsForList()).thenReturn(lista);
-        when(lista.leftPush(anyString(), anyString())).thenReturn(Mono.just(1L));
-        when(lista.trim(anyString(), anyLong(), anyLong())).thenReturn(Mono.empty());
+    void NEVER_stores_the_Authorization_header() throws Exception {
+        when(redis.opsForList()).thenReturn(list);
+        when(list.leftPush(anyString(), anyString())).thenReturn(Mono.just(1L));
+        when(list.trim(anyString(), anyLong(), anyLong())).thenReturn(Mono.empty());
 
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me")
-                .header("Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.SECRETO.firma").build());
-        ex.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, rutaHacia("users-service"));
+                .header("Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.SECRET.firma").build());
+        ex.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, routeTo("users-service"));
 
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
 
         ArgumentCaptor<String> json = ArgumentCaptor.forClass(String.class);
-        verify(lista, timeout(2000)).leftPush(eq(InterMicroTraceFilter.REDIS_KEY), json.capture());
+        verify(list, timeout(2000)).leftPush(eq(InterMicroTraceFilter.REDIS_KEY), json.capture());
 
         assertThat(json.getValue())
-                .doesNotContain("Bearer").doesNotContain("SECRETO").doesNotContain("eyJ");
+                .doesNotContain("Bearer").doesNotContain("SECRET").doesNotContain("eyJ");
     }
 
     @Test
-    void corre_despues_de_la_propagacion_de_identidad() {
-        assertThat(filtro.getOrder()).isGreaterThan(70).isLessThan(80);
+    void runs_after_identity_propagation() {
+        assertThat(filter.getOrder()).isGreaterThan(70).isLessThan(80);
     }
 }

@@ -19,9 +19,9 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * Firma tokens de test con la MISMA key que AbstractGatewayTest publica
- * como JWKS. Sin esto no se puede probar nada del pipeline: todo request que
- * no sea publico necesita un token que el Gateway acepte.
+ * Signs test tokens with the SAME key that AbstractGatewayTest publishes as
+ * JWKS. Without this nothing of the pipeline can be tested: every non-public
+ * request needs a token the Gateway accepts.
  */
 public final class TokenFactory {
 
@@ -37,21 +37,21 @@ public final class TokenFactory {
                     .algorithm(JWSAlgorithm.RS256)
                     .generate();
         } catch (JOSEException e) {
-            throw new IllegalStateException("No se pudo generar la key de test", e);
+            throw new IllegalStateException("Could not generate the test key", e);
         }
     }
 
-    /** Lo que sirve el MockWebServer del JWKS. Solo la parte publica. */
+    /** What the JWKS MockWebServer serves. Only the public part. */
     public static String jwksJson() {
         return new JWKSet(KEY).toPublicJWKSet().toString();
     }
 
-    /** Token de persona con TODOS los claims obligatorios (DEC-44). */
-    public static String persona(UUID sub, String sid) {
-        return persona(sub, sid, b -> { });
+    /** Person token with ALL the mandatory claims (DEC-44). */
+    public static String person(UUID sub, String sid) {
+        return person(sub, sid, b -> { });
     }
 
-    public static String persona(UUID sub, String sid, Consumer<JWTClaimsSet.Builder> ajuste) {
+    public static String person(UUID sub, String sid, Consumer<JWTClaimsSet.Builder> customizer) {
         JWTClaimsSet.Builder b = base()
                 .subject(sub.toString())
                 .claim("roles", List.of("STUDENT"))
@@ -60,16 +60,16 @@ public final class TokenFactory {
                 .claim("est", "ACTIVE")
                 .claim("pwd", false)
                 .claim("onb", false);
-        ajuste.accept(b);
+        customizer.accept(b);
         return sign(b.build());
     }
 
-    public static String servicio(String clientId, String aud, String scope) {
-        return servicio(clientId, aud, scope, b -> { });
+    public static String service(String clientId, String aud, String scope) {
+        return service(clientId, aud, scope, b -> { });
     }
 
-    public static String servicio(String clientId, String aud, String scope,
-                                  Consumer<JWTClaimsSet.Builder> ajuste) {
+    public static String service(String clientId, String aud, String scope,
+                                 Consumer<JWTClaimsSet.Builder> customizer) {
         JWTClaimsSet.Builder b = base()
                 .subject(clientId)
                 .claim("roles", List.of("MS"))
@@ -78,19 +78,19 @@ public final class TokenFactory {
         if (aud != null) {
             b.audience(aud);
         }
-        ajuste.accept(b);
+        customizer.accept(b);
         return sign(b.build());
     }
 
     /**
-     * Token firmado con HS256. El Gateway solo admite RS256, asi que este
-     * token DEBE ser rechazado — incluido el caso `alg: none`, que Nimbus
-     * ni siquiera deja construir con un signer real.
+     * Token signed with HS256. The Gateway only admits RS256, so this token
+     * MUST be rejected — including the `alg: none` case, which Nimbus does
+     * not even let you build with a real signer.
      */
-    public static String hs256Falso() {
+    public static String hs256Forgery() {
         try {
-            byte[] secreto = new byte[32];
-            new java.security.SecureRandom().nextBytes(secreto);
+            byte[] secret = new byte[32];
+            new java.security.SecureRandom().nextBytes(secret);
             SignedJWT jwt = new SignedJWT(
                     new JWSHeader.Builder(JWSAlgorithm.HS256).build(),
                     base().subject(UUID.randomUUID().toString())
@@ -101,7 +101,7 @@ public final class TokenFactory {
                             .claim("pwd", false)
                             .claim("onb", false)
                             .build());
-            jwt.sign(new MACSigner(secreto));
+            jwt.sign(new MACSigner(secret));
             return jwt.serialize();
         } catch (JOSEException e) {
             throw new IllegalStateException(e);
@@ -109,12 +109,12 @@ public final class TokenFactory {
     }
 
     private static JWTClaimsSet.Builder base() {
-        Instant ahora = Instant.now();
+        Instant now = Instant.now();
         return new JWTClaimsSet.Builder()
                 .issuer("users-service")
                 .jwtID(UUID.randomUUID().toString())
-                .issueTime(Date.from(ahora))
-                .expirationTime(Date.from(ahora.plusSeconds(600)));
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plusSeconds(600)));
     }
 
     private static String sign(JWTClaimsSet claims) {
@@ -124,7 +124,7 @@ public final class TokenFactory {
             jwt.sign(new RSASSASigner(KEY.toPrivateKey()));
             return jwt.serialize();
         } catch (JOSEException e) {
-            throw new IllegalStateException("No se pudo firmar el token de test", e);
+            throw new IllegalStateException("Could not sign the test token", e);
         }
     }
 

@@ -13,73 +13,73 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * G5 - cache local de 3s sobre el repositorio Redis. La motivacion es
- * DISPONIBILIDAD, no carga: con DEC-01 fail-closed, Redis caido era
- * plataforma caida. Con esta cache, un hipo corto de Redis se absorbe y un
- * Redis caido se convierte en una degradacion acotada, no en un corte total.
+ * G5 - local 3s cache on top of the Redis repository. The motivation is
+ * AVAILABILITY, not load: with DEC-01 fail-closed, a dead Redis was a dead
+ * platform. With this cache, a short Redis hiccup is absorbed and a dead
+ * Redis becomes a bounded degradation, not a total outage.
  *
- * <p>El test es unitario y NO toca Redis: lo que se prueba es la politica
- * de cache - lo unico que esta en duda. La lectura contra Redis la prueba
- * L8 en su test de integracion.
+ * <p>The test is unit-level and does NOT touch Redis: what is tested is the
+ * cache policy - the only thing in doubt. The read against Redis is tested by
+ * L8 in its integration test.
  */
 class CachingSessionRepositoryTest {
 
     private final SessionCacheProperties props = new SessionCacheProperties(Duration.ofSeconds(3), 100);
 
     @Test
-    void dos_lecturas_seguidas_pegan_UNA_sola_vez_a_Redis() {
-        AtomicInteger llamadas = new AtomicInteger();
-        var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Active("sid-1")); },
+    void two_consecutive_reads_hit_Redis_ONLY_once() {
+        AtomicInteger calls = new AtomicInteger();
+        var cached = new CachingSessionRepository(
+                id -> { calls.incrementAndGet(); return Mono.just(new SessionState.Active("sid-1")); },
                 props);
 
-        StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
-        StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(cached.findSid("u1")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(cached.findSid("u1")).expectNextCount(1).verifyComplete();
 
-        assertThat(llamadas.get()).isEqualTo(1);
+        assertThat(calls.get()).isEqualTo(1);
     }
 
     @Test
-    void NO_cachea_el_estado_Unavailable() {
+    void does_NOT_cache_the_Unavailable_state() {
         // Caching a Redis failure for 3 s turns a hiccup into a guaranteed 3 s
         // outage. Only what could actually be read gets cached.
-        AtomicInteger llamadas = new AtomicInteger();
-        var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet();
-                        return Mono.just(new SessionState.Unavailable(new RuntimeException("caido"))); },
+        AtomicInteger calls = new AtomicInteger();
+        var cached = new CachingSessionRepository(
+                id -> { calls.incrementAndGet();
+                        return Mono.just(new SessionState.Unavailable(new RuntimeException("down"))); },
                 props);
 
-        StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
-        StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(cached.findSid("u1")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(cached.findSid("u1")).expectNextCount(1).verifyComplete();
 
-        assertThat(llamadas.get()).isEqualTo(2);
+        assertThat(calls.get()).isEqualTo(2);
     }
 
     @Test
-    void cachea_tambien_el_estado_Absent() {
-        // Un logout reciente es legitimo y frecuente: no hay por que pegarle a
-        // Redis en cada request de una sesion ya cerrada.
-        AtomicInteger llamadas = new AtomicInteger();
-        var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Absent()); },
+    void it_also_caches_the_Absent_state() {
+        // A recent logout is legitimate and frequent: there is no reason to hit
+        // Redis on every request of an already closed session.
+        AtomicInteger calls = new AtomicInteger();
+        var cached = new CachingSessionRepository(
+                id -> { calls.incrementAndGet(); return Mono.just(new SessionState.Absent()); },
                 props);
 
-        StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
-        StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(cached.findSid("u1")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(cached.findSid("u1")).expectNextCount(1).verifyComplete();
 
-        assertThat(llamadas.get()).isEqualTo(1);
+        assertThat(calls.get()).isEqualTo(1);
     }
 
     @Test
-    void cada_usuario_tiene_su_propia_entrada() {
-        AtomicInteger llamadas = new AtomicInteger();
-        var cacheado = new CachingSessionRepository(
-                id -> { llamadas.incrementAndGet(); return Mono.just(new SessionState.Active(id)); },
+    void each_user_has_its_own_entry() {
+        AtomicInteger calls = new AtomicInteger();
+        var cached = new CachingSessionRepository(
+                id -> { calls.incrementAndGet(); return Mono.just(new SessionState.Active(id)); },
                 props);
 
-        StepVerifier.create(cacheado.findSid("u1")).expectNextCount(1).verifyComplete();
-        StepVerifier.create(cacheado.findSid("u2")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(cached.findSid("u1")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(cached.findSid("u2")).expectNextCount(1).verifyComplete();
 
-        assertThat(llamadas.get()).isEqualTo(2);
+        assertThat(calls.get()).isEqualTo(2);
     }
 }

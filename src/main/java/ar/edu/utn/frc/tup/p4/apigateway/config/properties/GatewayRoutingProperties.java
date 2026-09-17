@@ -16,12 +16,13 @@ public record GatewayRoutingProperties(@NotEmpty List<String> allowlist,
     /**
      * users-service -> "users". The derivation from the spec, in one place.
      *
-     * <p>La UNICA derivacion que existe, y va en un solo sentido. La inversa
-     * (segmento -> serviceId) no esta y no debe estar: reconstruirla obliga a
-     * asumir que todo serviceId termina en {@code -service}, y un equipo que se
-     * registre como {@code cursos} a secas rompe esa vuelta sin que nada avise.
-     * Donde hace falta el destino resuelto -{@code ServiceAudienceFilter}- se
-     * lee del host de la ruta, que es el serviceId exacto de la allowlist.
+     * <p>The ONLY derivation that exists, and it goes in ONE direction. The
+     * inverse (segment -> serviceId) is not there and must not be: rebuilding
+     * it forces the assumption that every serviceId ends in {@code -service},
+     * and a team registering as plain {@code cursos} breaks that round trip
+     * without anything warning. Where the resolved destination is needed —
+     * {@code ServiceAudienceFilter} — it is read from the route's host, which
+     * is the exact serviceId of the allowlist.
      */
     public String serviceIdToPathSegment(String serviceId) {
         return serviceId.toLowerCase(Locale.ROOT).replace(serviceIdSuffix, "");

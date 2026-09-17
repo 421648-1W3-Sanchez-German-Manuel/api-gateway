@@ -32,12 +32,12 @@ class PrincipalContextFactoryTest {
         assertThat(p.subject()).isEqualTo(sub.toString());
         assertThat(p.roles()).containsExactly("STUDENT", "PROFESSOR");
         assertThat(p.sid()).isEqualTo("sid-1");
-        assertThat(p.est()).isEqualTo("ACTIVE");
+        assertThat(p.accountStatus()).isEqualTo("ACTIVE");
     }
 
     @Test
-    void serializa_los_roles_con_coma_SIN_espacio() {
-        // DEC-05: del lado del destino, un solo split(",") sirve.
+    void serializes_roles_with_a_comma_and_NO_space() {
+        // DEC-05: on the destination's side, a single split(",") works.
         Jwt jwt = base().subject("s").claim("type", "user")
                 .claim("roles", List.of("STUDENT", "PROFESSOR")).claim("sid", "s")
                 .claim("est", "ACTIVE").claim("pwd", false).claim("onb", false).build();
@@ -46,8 +46,8 @@ class PrincipalContextFactoryTest {
     }
 
     @Test
-    void el_header_de_servicio_lleva_MS_PRIMERO_y_despues_los_scopes() {
-        // DEC-05: "MS + the token scope", en ese orden y estable.
+    void service_header_puts_MS_FIRST_then_the_scopes() {
+        // DEC-05: "MS + the token scope", in that order and stable.
         Jwt jwt = base().subject("cursos-service").claim("type", "service")
                 .claim("roles", List.of("MS")).claim("aud", List.of("users-service"))
                 .claim("scope", "users.profile.read").build();
@@ -81,34 +81,34 @@ class PrincipalContextFactoryTest {
 
         PrincipalContext p = PrincipalContext.from(jwt);
         assertThat(p.sid()).isNull();
-        assertThat(p.est()).isNull();
+        assertThat(p.accountStatus()).isNull();
     }
 
     @Test
-    void un_claim_booleano_como_string_no_rompe_el_parseo() {
-        // Si users-service emite "true" (string) en vez de true, el
-        // getClaim generico tira ClassCastException y el gateway da 500.
+    void a_boolean_claim_as_a_string_does_not_break_the_parsing() {
+        // If users-service emits "true" (string) instead of true, the generic
+        // getClaim throws ClassCastException and the gateway gives 500.
         Jwt jwt = base().subject("s").claim("type", "user")
                 .claim("roles", List.of("STUDENT")).claim("sid", "s")
                 .claim("est", "ACTIVE").claim("pwd", "true").claim("onb", "false").build();
 
         PrincipalContext p = PrincipalContext.from(jwt);
-        assertThat(p.pwd()).isTrue();
-        assertThat(p.onb()).isFalse();
+        assertThat(p.passwordChangeRequired()).isTrue();
+        assertThat(p.onboardingPending()).isFalse();
     }
 
     @Test
-    void un_claim_booleano_con_tipo_raro_da_null_no_excepcion() {
+    void a_boolean_claim_with_a_weird_type_gives_null_not_an_exception() {
         Jwt jwt = base().subject("s").claim("type", "user")
                 .claim("roles", List.of("STUDENT")).claim("sid", "s")
                 .claim("est", "ACTIVE").claim("pwd", List.of("si")).claim("onb", false).build();
 
-        assertThat(PrincipalContext.booleanoDe(jwt, "pwd")).isNull();
-        assertThat(PrincipalContext.booleanoDe(jwt, "ausente")).isNull();
+        assertThat(PrincipalContext.booleanClaim(jwt, "pwd")).isNull();
+        assertThat(PrincipalContext.booleanClaim(jwt, "ausente")).isNull();
     }
 
     @Test
-    void matches_es_null_safe_y_case_sensitive() {
+    void matches_is_null_safe_and_case_sensitive() {
         assertThat(PrincipalType.USER.matches("user")).isTrue();
         assertThat(PrincipalType.USER.matches("User")).isFalse();
         assertThat(PrincipalType.USER.matches(null)).isFalse();

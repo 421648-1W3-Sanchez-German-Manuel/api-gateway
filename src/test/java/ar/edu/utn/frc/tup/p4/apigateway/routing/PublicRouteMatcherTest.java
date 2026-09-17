@@ -9,26 +9,26 @@ class PublicRouteMatcherTest {
 
     private final PublicRouteMatcher matcher = new PublicRouteMatcher();
 
-    @ParameterizedTest(name = "{0} -> publica={1}")
+    @ParameterizedTest(name = "{0} -> public={1}")
     @CsvSource({
-            // convenio §5
+            // §5 convention
             "/api/users/public/auth/login,          true",
             "/api/users/public/registration,       true",
             "/api/users/public,                    true",
             "/api/users/public/,                   true",
             "/api/cursos/public/loquesea,          true",
-            // bordes que NO son publicos
+            // edges that are NOT public
             "/api/users/publicx,                   false",
             "/api/users/Public/auth,               false",
             "/api/users/me,                        false",
             "/api/users,                           false",
             "/api,                                 false",
             "/,                                    false",
-            // infraestructura
+            // infrastructure
             "/.well-known/jwks.json,               true",
             "/fallback/servicio,                   true",
     })
-    void clasifica_rutas_publicas_y_privadas(String path, boolean esperada) {
-        assertThat(matcher.esPublica(path.trim())).isEqualTo(esperada);
+    void classifies_public_and_private_routes(String path, boolean expected) {
+        assertThat(matcher.isPublic(path.trim())).isEqualTo(expected);
     }
 }

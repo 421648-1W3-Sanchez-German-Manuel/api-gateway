@@ -15,56 +15,57 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LoggingFilterTest {
 
     private ListAppender<ILoggingEvent> captured;
-    private final LoggingFilter filtro = new LoggingFilter();
+    private final LoggingFilter filter = new LoggingFilter();
 
     @BeforeEach
-    void capturarLogs() {
+    void captureLogs() {
         captured = new ListAppender<>();
         captured.start();
         ((Logger) LoggerFactory.getLogger(LoggingFilter.class)).addAppender(captured);
     }
 
     @AfterEach
-    void soltar() {
+    void detach() {
         ((Logger) LoggerFactory.getLogger(LoggingFilter.class)).detachAppender(captured);
     }
 
     @Test
-    void NUNCA_loguea_el_header_Authorization() {
+    void NEVER_logs_the_Authorization_header() {
         // A token in the log is a stolen token, for whoever reads logs.
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me")
-                .header("Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.SECRETO.firma").build());
+                .header("Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.SECRET.firma").build());
 
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
 
-        // isNotEmpty primero: allSatisfy pasa vacuamente sobre una lista vacia,
-        // y sin esto el test dependeria de que otro pruebe que se loguea algo.
-        assertThat(captured.list).isNotEmpty().allSatisfy(evento ->
-                assertThat(evento.getFormattedMessage())
-                        .doesNotContain("Bearer").doesNotContain("SECRETO").doesNotContain("eyJ"));
+        // isNotEmpty first: allSatisfy passes vacuously over an empty list, and
+        // without this the test would depend on another one testing that
+        // something is logged.
+        assertThat(captured.list).isNotEmpty().allSatisfy(event ->
+                assertThat(event.getFormattedMessage())
+                        .doesNotContain("Bearer").doesNotContain("SECRET").doesNotContain("eyJ"));
     }
 
     @Test
-    void NUNCA_loguea_el_body() {
+    void NEVER_logs_the_body() {
         var ex = MockServerWebExchange.from(MockServerHttpRequest
                 .post("/api/users/public/auth/token")
-                .body("{\"clientSecret\":\"un-secreto\"}"));
+                .body("{\"clientSecret\":\"a-secret\"}"));
 
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
 
-        assertThat(captured.list).isNotEmpty().allSatisfy(evento ->
-                assertThat(evento.getFormattedMessage()).doesNotContain("un-secreto"));
+        assertThat(captured.list).isNotEmpty().allSatisfy(event ->
+                assertThat(event.getFormattedMessage()).doesNotContain("a-secret"));
     }
 
     @Test
-    void loguea_metodo_path_y_status() {
+    void logs_method_path_and_status() {
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me").build());
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
 
-        assertThat(captured.list).anySatisfy(evento ->
-                assertThat(evento.getFormattedMessage()).contains("GET").contains("/api/users/me"));
+        assertThat(captured.list).anySatisfy(event ->
+                assertThat(event.getFormattedMessage()).contains("GET").contains("/api/users/me"));
     }
 
     @Test
-    void es_el_segundo_filtro() { assertThat(filtro.getOrder()).isEqualTo(20); }
+    void it_is_the_second_filter() { assertThat(filter.getOrder()).isEqualTo(20); }
 }

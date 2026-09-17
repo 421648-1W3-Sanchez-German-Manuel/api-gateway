@@ -36,7 +36,7 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        if (Boolean.TRUE.equals(exchange.getAttribute(PublicRouteGuard.ATTR_ES_PUBLICA))) {
+        if (Boolean.TRUE.equals(exchange.getAttribute(PublicRouteGuard.ATTR_IS_PUBLIC))) {
             return chain.filter(exchange);
         }
 
@@ -52,14 +52,14 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
                 .map(Jwt.class::cast)
                 .map(Optional::of)
                 .defaultIfEmpty(Optional.empty())
-                .flatMap(posible -> {
-                    if (posible.isEmpty()) {
+                .flatMap(maybe -> {
+                    if (maybe.isEmpty()) {
                         return reject(exchange);
                     }
-                    Jwt jwt = posible.get();
-                    String reason = coherencia(jwt, exchange);
+                    Jwt jwt = maybe.get();
+                    String reason = checkShape(jwt, exchange);
                     if (reason != null) {
-                        log.warn("JWT_RECHAZADO reason={} sub={}", reason, jwt.getSubject());
+                        log.warn("JWT_REJECTED reason={} sub={}", reason, jwt.getSubject());
                         return reject(exchange);
                     }
                     exchange.getAttributes().put(ATTR_JWT, jwt);
@@ -70,47 +70,49 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
     /**
      * Returns the reason, or null when the token is well formed.
      *
-     * Spec "Sesion en Cookies" decision 3 - estado final del cutover: un
-     * token de persona (type=user) solo vale si llego por la cookie fu_at;
-     * uno de servicio (type=service) solo si llego por el header
-     * Authorization. Cierra el canal por tipo de claim, no por costumbre -
-     * un token de persona robado y puesto a mano en un header deja de
-     * servir, que es todo el punto de haber migrado a cookies HttpOnly.
+     * Spec "Sesion en Cookies" decision 3 - post-cutover state: a person token
+     * (type=user) is only valid if it arrived through the fu_at cookie; a
+     * service token (type=service) only if it arrived through the Authorization
+     * header. It closes the channel by claim type, not by habit - a stolen
+     * person token pasted by hand into a header stops working, which is the
+     * whole point of moving to HttpOnly cookies.
      */
-    private String coherencia(Jwt jwt, ServerWebExchange exchange) {
+    private String checkShape(Jwt jwt, ServerWebExchange exchange) {
         String type = jwt.getClaimAsString("type");
         if (type == null) {
-            return "claim-ausente-type";
+            return "claim-missing-type";
         }
 
-        PrincipalType tipo;
+        PrincipalType principalType;
         try {
-            tipo = PrincipalType.from(type);
+            principalType = PrincipalType.from(type);
         } catch (IllegalArgumentException e) {
-            return "type-desconocido";
+            return "type-unknown";
         }
 
         if (jwt.getSubject() == null || jwt.getSubject().isBlank()) {
-            return "claim-ausente-sub";
+            return "claim-missing-sub";
         }
 
         List<String> roles = jwt.getClaimAsStringList("roles");
         if (roles == null || roles.isEmpty()) {
-            return "claim-ausente-roles";
+            return "claim-missing-roles";
         }
 
         // A service token WITHOUT the MS role is not a service token.
-        if (tipo == PrincipalType.SERVICE && !roles.contains("MS")) {
-            return "servicio-sin-MS";
+        if (principalType == PrincipalType.SERVICE && !roles.contains("MS")) {
+            return "service-without-MS";
         }
 
-        CookieOrHeaderBearerConverter.Canal canal =
-                exchange.getAttribute(CookieOrHeaderBearerConverter.ATTR_CANAL);
-        if (tipo == PrincipalType.USER && canal != CookieOrHeaderBearerConverter.Canal.COOKIE) {
-            return "persona-por-header";
+        CookieOrHeaderBearerConverter.Channel channel =
+                exchange.getAttribute(CookieOrHeaderBearerConverter.ATTR_CHANNEL);
+        if (principalType == PrincipalType.USER
+                && channel != CookieOrHeaderBearerConverter.Channel.COOKIE) {
+            return "person-via-header";
         }
-        if (tipo == PrincipalType.SERVICE && canal != CookieOrHeaderBearerConverter.Canal.HEADER) {
-            return "servicio-por-cookie";
+        if (principalType == PrincipalType.SERVICE
+                && channel != CookieOrHeaderBearerConverter.Channel.HEADER) {
+            return "service-via-cookie";
         }
 
         return null;
@@ -118,8 +120,8 @@ public class PrivateRouteGuard implements GlobalFilter, Ordered {
 
     private Mono<Void> reject(ServerWebExchange exchange) {
         return ProblemDetails.write(exchange, HttpStatus.UNAUTHORIZED,
-                ErrorTypes.NOT_AUTHENTICATED, "No autenticado",
-                "El token no es valido para esta ruta.");
+                ErrorTypes.NOT_AUTHENTICATED, "Not authenticated",
+                "The token is not valid for this route.");
     }
 
     @Override

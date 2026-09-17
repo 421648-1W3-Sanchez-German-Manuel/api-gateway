@@ -10,18 +10,18 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Mono;
 
 /**
- * DEC-25 - cache de PROCESO con TTL corto. Redefine "invalidacion inmediata"
- * de 0s a &lt;=3s: alejamiento deliberado del texto de v5, que decia "sin
- * esperar los 10 min de exp".
+ * DEC-25 - in-PROCESS cache with a short TTL. It redefines "immediate
+ * invalidation" from 0s to &lt;=3s: a deliberate departure from v5's text,
+ * which said "without waiting the 10 min exp".
  *
- * <p>El riesgo que mitiga NO es carga: 120 usuarios concurrentes son
- * ~1.200 GET/s contra un Redis que hace ~100.000 ops/s. Es DISPONIBILIDAD:
- * con DEC-01 fail-closed, Redis caido era plataforma caida. Con esta cache,
- * un hipo corto de Redis se absorbe y un Redis caido se convierte en una
- * degradacion acotada, no en un corte total.
+ * <p>The risk it mitigates is NOT load: 120 concurrent users are ~1.200
+ * GET/s against a Redis doing ~100.000 ops/s. It is AVAILABILITY: with
+ * DEC-01 fail-closed, a dead Redis was a dead platform. With this cache, a
+ * short Redis hiccup is absorbed and a dead Redis becomes a bounded
+ * degradation, not a total outage.
  *
- * <p>{@link SessionState.Unavailable} NO se cachea: cachear un error de
- * Redis por 3s convierte un hipo en una caida garantizada de 3s.
+ * <p>{@link SessionState.Unavailable} is NOT cached: caching a Redis error
+ * for 3s turns a hiccup into a guaranteed 3s outage.
  */
 @Repository
 @Primary
@@ -42,13 +42,13 @@ public class CachingSessionRepository implements SessionRepository {
 
     @Override
     public Mono<SessionState> findSid(String userId) {
-        SessionState cacheado = cache.getIfPresent(userId);
-        if (cacheado != null) {
-            return Mono.just(cacheado);
+        SessionState cached = cache.getIfPresent(userId);
+        if (cached != null) {
+            return Mono.just(cached);
         }
         return delegate.findSid(userId).doOnNext(status -> {
-            // Unavailable NO: cachear un fallo de Redis por 3s convierte un
-            // hipo en una caida garantizada de 3s.
+            // Unavailable NO: caching a Redis failure for 3s turns a hiccup
+            // into a guaranteed 3s outage.
             if (!(status instanceof SessionState.Unavailable)) {
                 cache.put(userId, status);
             }

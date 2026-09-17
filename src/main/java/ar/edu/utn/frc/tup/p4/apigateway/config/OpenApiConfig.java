@@ -8,25 +8,25 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * El spec del gateway y, sobre todo, LA pantalla de documentacion del
- * subsistema.
+ * The gateway's spec and, above all, THE documentation screen of the
+ * subsystem.
  *
- * <p>El gateway tiene un solo endpoint propio, asi que documentarlo no es el
- * punto. El punto es el desplegable de {@code springdoc.swagger-ui.urls}: un
- * unico lugar donde estan TODAS las APIs de la plataforma. Que ese lugar sea el
- * gateway no es casual — es el unico proceso que ya conoce a todos los
- * servicios, y el unico que publica puerto.
+ * <p>The gateway has a single endpoint of its own, so documenting it is not
+ * the point. The point is the {@code springdoc.swagger-ui.urls} dropdown: a
+ * single place with ALL the platform's APIs. That this place is the gateway
+ * is not chance — it is the only process that already knows every service,
+ * and the only one that publishes a port.
  *
- * <p><b>Esta pantalla no rutea.</b> Que una API aparezca en el desplegable no
- * la expone: exponerla sigue siendo poner su serviceId en
- * {@code gateway.routing.allowlist} (no-negociable 2). Son dos listas con dos
- * propositos, y agregar la doc de un servicio que todavia no esta en la
- * allowlist da 404 al probarlo, no acceso.
+ * <p><b>This screen does not route.</b> That an API appears in the dropdown
+ * does not expose it: exposing it still means putting its serviceId in
+ * {@code gateway.routing.allowlist} (non-negotiable 2). They are two lists
+ * with two purposes, and adding the docs of a service that is not yet on the
+ * allowlist gives 404 when you try it, not access.
  */
 @Configuration
 public class OpenApiConfig {
 
-    /** El nombre del esquema, por si algun endpoint propio llega a necesitarlo. */
+    /** The scheme's name, in case an endpoint of its own ever needs it. */
     public static final String BEARER_SCHEME = "bearerAuth";
 
     @Bean

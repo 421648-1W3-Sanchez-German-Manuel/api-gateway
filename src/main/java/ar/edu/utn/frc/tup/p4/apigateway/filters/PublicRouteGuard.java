@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
 @Component
 public class PublicRouteGuard implements GlobalFilter, Ordered {
 
-    public static final String ATTR_ES_PUBLICA = "gateway.rutaPublica";
+    public static final String ATTR_IS_PUBLIC = "gateway.isPublic";
 
     private final PublicRouteMatcher matcher;
 
@@ -28,8 +28,8 @@ public class PublicRouteGuard implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        boolean publica = matcher.esPublica(exchange.getRequest().getPath().value());
-        exchange.getAttributes().put(ATTR_ES_PUBLICA, publica);
+        boolean isPublic = matcher.isPublic(exchange.getRequest().getPath().value());
+        exchange.getAttributes().put(ATTR_IS_PUBLIC, isPublic);
         return chain.filter(exchange);
     }
 

@@ -31,16 +31,16 @@ class RateLimitForwardedIT extends AbstractGatewayTest {
         // it were one client. The limiter is useless and nobody finds out until
         // the exam-week peak.
         for (int i = 0; i < 3; i++) {
-            cliente.post().uri("/api/users/public/auth/login")
+            client.post().uri("/api/users/public/auth/login")
                     .header("X-Forwarded-For", "203.0.113.10")
                     .exchange().expectStatus().isOk();
         }
-        cliente.post().uri("/api/users/public/auth/login")
+        client.post().uri("/api/users/public/auth/login")
                 .header("X-Forwarded-For", "203.0.113.10")
                 .exchange().expectStatus().isEqualTo(429);
 
         // The OTHER IP still has its full budget.
-        cliente.post().uri("/api/users/public/auth/login")
+        client.post().uri("/api/users/public/auth/login")
                 .header("X-Forwarded-For", "203.0.113.99")
                 .exchange().expectStatus().isOk();
     }
@@ -48,10 +48,10 @@ class RateLimitForwardedIT extends AbstractGatewayTest {
     @Test
     void the_429_carries_Retry_After_and_the_shared_type() {
         for (int i = 0; i < 4; i++) {
-            cliente.post().uri("/api/users/public/auth/login")
+            client.post().uri("/api/users/public/auth/login")
                     .header("X-Forwarded-For", "203.0.113.20").exchange();
         }
-        cliente.post().uri("/api/users/public/auth/login")
+        client.post().uri("/api/users/public/auth/login")
                 .header("X-Forwarded-For", "203.0.113.20")
                 .exchange().expectStatus().isEqualTo(429)
                 .expectHeader().exists("Retry-After")
@@ -63,7 +63,7 @@ class RateLimitForwardedIT extends AbstractGatewayTest {
     void a_route_NOT_in_expensive_routes_is_NOT_limited() {
         // The filter is a no-op off the list: we do not want to limit everything.
         for (int i = 0; i < 20; i++) {
-            cliente.get().uri("/api/users/public/legal/terms")
+            client.get().uri("/api/users/public/legal/terms")
                     .header("X-Forwarded-For", "203.0.113.30")
                     .exchange().expectStatus().isOk();
         }

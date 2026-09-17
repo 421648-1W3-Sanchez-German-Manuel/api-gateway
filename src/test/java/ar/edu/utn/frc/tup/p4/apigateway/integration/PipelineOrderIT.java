@@ -33,8 +33,8 @@ class PipelineOrderIT extends AbstractGatewayTest {
     private void anAuthenticatedRequest() {
         UUID u = UUID.randomUUID();
         seedSession(redis, u, "sid-1");
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(u, "sid-1"))
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.person(u, "sid-1"))
                 .exchange().expectStatus().isOk();
     }
 

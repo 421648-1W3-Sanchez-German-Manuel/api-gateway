@@ -7,10 +7,10 @@ import org.springframework.validation.annotation.Validated;
 import java.util.List;
 
 /**
- * A donde puede hablar una cuenta NO habilitada. Hoy todo lo exento es de
- * users-service, asi que el gateway no necesita conocer rutas ajenas: si un
- * micro nuevo trae su propio onboarding, se agrega su prefijo aca (o por env)
- * en vez de tocar codigo.
+ * Where an account that is NOT enabled can talk to. Today everything exempt
+ * belongs to users-service, so the gateway needs to know no foreign routes:
+ * if a new micro brings its own onboarding, its prefix is added here (or via
+ * env) instead of touching code.
  */
 @Validated
 @ConfigurationProperties(prefix = "gateway.account-gate")

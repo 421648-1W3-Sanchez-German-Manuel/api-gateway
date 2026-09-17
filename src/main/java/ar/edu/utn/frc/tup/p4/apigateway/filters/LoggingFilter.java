@@ -10,7 +10,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 /**
- * Paso 3 del pipeline · @Order(20).
+ * Pipeline step 3 · @Order(20).
  *
  * What it NEVER logs: bodies, tokens, the Authorization header, or the
  * clientSecret of /auth/token. A token in the log is a stolen token, for
@@ -25,15 +25,15 @@ public class LoggingFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        long inicio = System.nanoTime();
+        long start = System.nanoTime();
         var req = exchange.getRequest();
 
-        return chain.filter(exchange).doFinally(señal -> {
+        return chain.filter(exchange).doFinally(signal -> {
             var status = exchange.getResponse().getStatusCode();
             log.info("{} {} -> {} ({} ms)",
                     req.getMethod(), req.getPath().value(),
                     status == null ? "-" : status.value(),
-                    (System.nanoTime() - inicio) / 1_000_000);
+                    (System.nanoTime() - start) / 1_000_000);
         });
     }
 

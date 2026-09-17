@@ -13,9 +13,10 @@ public final class IdentityHeaders {
     public static final String REQUEST_ID = "X-Request-Id";
 
     /**
-     * Los cinco que el Gateway BORRA siempre antes de inyectar. Anti-spoofing.
-     * traceparent NO esta aca: el entrante se acepta (W3C Trace Context),
-     * porque pisarlo parte el rastreo en dos justo en el borde.
+     * The five that the Gateway ALWAYS strips before injecting. Anti-spoofing.
+     * traceparent is NOT here: the incoming one is accepted (W3C Trace
+     * Context), because overwriting it splits the trace in two right at the
+     * edge.
      */
     public static final List<String> RESERVED = List.of(
             PRINCIPAL_TYPE, USER_ID, USER_ROLES, SERVICE_ID, SERVICE_SCOPES);

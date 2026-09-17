@@ -11,8 +11,8 @@ import org.springframework.test.context.TestPropertySource;
 import java.util.UUID;
 
 /**
- * Los prefijos exentos del gate grueso son CONFIG, no codigo: con otra lista,
- * otra cuenta pasa a otros micros sin tocar el gateway.
+ * The prefixes exempt from the coarse gate are CONFIG, not code: with another
+ * list, another account gets into other services without touching the gateway.
  */
 @TestPropertySource(properties = {
         "gateway.account-gate.exempt-prefixes[0]=/api/cursos/**"
@@ -21,25 +21,25 @@ class AccountGateExemptIT extends AbstractGatewayTest {
 
     @Autowired ReactiveStringRedisTemplate redis;
 
-    private String pendiente(UUID u) {
+    private String pending(UUID u) {
         seedSession(redis, u, "sid-1");
-        return TokenFactory.persona(u, "sid-1",
+        return TokenFactory.person(u, "sid-1",
                 b -> b.claim("est", "PENDING_COURSE").claim("pwd", false).claim("onb", false));
     }
 
     @Test
-    void con_otra_config_la_cuenta_no_habilitada_pasa_al_prefijo_exento() {
+    void with_another_config_the_not_enabled_account_passes_the_exempt_prefix() {
         UUID u = UUID.randomUUID();
-        cliente.get().uri("/api/cursos/mis-cursos")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, pendiente(u))
+        client.get().uri("/api/cursos/mis-cursos")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, pending(u))
                 .exchange().expectStatus().isOk();
     }
 
     @Test
-    void y_sigue_bloqueada_fuera_del_prefijo_exento() {
+    void and_it_stays_blocked_outside_the_exempt_prefix() {
         UUID u = UUID.randomUUID();
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, pendiente(u))
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, pending(u))
                 .exchange().expectStatus().isForbidden()
                 .expectBody().jsonPath("$.accountStatus").isEqualTo("PENDING_COURSE");
     }

@@ -19,16 +19,17 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 import java.util.List;
 
 /**
- * Paso 1 del pipeline - la UNICA cadena que autentica.
+ * Step 1 of the pipeline - the ONLY chain that authenticates.
  *
- * <p>DEC-44 - {@code iss} y {@code exp} se validan SIEMPRE, sin flag, dentro
- * del decoder. Los dos validators son SINCRONICOS de verdad: no leen nada de
- * red. La validacion de sesion ({@code sid} contra Redis) NO va aca -es
- * {@code SessionGuard}, un WebFilter reactivo- por el motivo que documenta
- * {@code SessionValidator}.
+ * <p>DEC-44 - {@code iss} and {@code exp} are ALWAYS validated, without a
+ * flag, inside the decoder. Both validators are truly SYNCHRONOUS: they read
+ * nothing from the network. Session validation ({@code sid} against Redis)
+ * does NOT go here — it is {@code SessionGuard}, a reactive WebFilter — for
+ * the reason documented in {@code SessionValidator}.
  *
- * <p>R3 - cero {@code hasRole}/{@code hasAuthority}: todo lo privado es
- * {@code authenticated()} y nada mas. El rol lo chequea el destino.
+ * <p>R3 - zero {@code hasRole}/{@code hasAuthority}: everything private is
+ * {@code authenticated()} and nothing more. The role is checked by the
+ * destination.
  */
 @Configuration
 @EnableWebFluxSecurity
@@ -38,7 +39,7 @@ public class SecurityConfig {
     ReactiveJwtDecoder jwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
             JwtProperties props) {
-        var validadores = List.<OAuth2TokenValidator<Jwt>>of(
+        var validators = List.<OAuth2TokenValidator<Jwt>>of(
                 new JwtTimestampValidator(),
                 new IssuerValidator(props.expectedIssuer()));
 
@@ -46,7 +47,7 @@ public class SecurityConfig {
                 .withJwkSetUri(jwkSetUri)
                 .jwsAlgorithm(SignatureAlgorithm.RS256)
                 .build();
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validadores));
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
         return decoder;
     }
 
@@ -54,30 +55,31 @@ public class SecurityConfig {
     SecurityWebFilterChain chain(ServerHttpSecurity http, ReactiveJwtDecoder decoder,
                                   CookieOrHeaderBearerConverter bearerConverter) {
         return http
-                // Decision 1 del spec "Sesion en Cookies": SameSite=Strict +
-                // mismo origen (nginx :3000, sin subdominios) ya cubre CSRF
-                // para el uso real de esta app. Sigue deshabilitado a
-                // proposito, no por descuido - se reabre si el dia de manana
-                // front y Gateway dejan de compartir origen.
+                // Decision 1 of the "Sesion en Cookies" spec: SameSite=Strict +
+                // same origin (nginx :3000, no subdomains) already covers CSRF
+                // for the real use of this app. It stays disabled on purpose,
+                // not by neglect - it is reopened if one day front and Gateway
+                // stop sharing an origin.
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .authorizeExchange(ex -> ex
-                        // El patron de /api/*/public/** es EL MISMO que usa
-                        // PublicRouteGuard (PublicRouteMatcher): dos
-                        // definiciones de "publico" divergen en los bordes.
+                        // The /api/*/public/** pattern is THE SAME one used by
+                        // PublicRouteGuard (PublicRouteMatcher): two definitions
+                        // of "public" diverge at the edges.
                         .pathMatchers(PublicRouteMatcher.API_PUBLIC_PATTERN).permitAll()
                         .pathMatchers("/.well-known/**").permitAll()
                         .pathMatchers("/actuator/health/**").permitAll()
                         .pathMatchers("/actuator/prometheus").permitAll()
                         .pathMatchers("/fallback/**").permitAll()
-                        // La documentacion: el spec, la pantalla y sus estaticos.
-                        // Anonima a proposito -no se puede pedir el token en la
-                        // pagina que explica como sacarlo- y por eso es UNA sola
-                        // linea: springdoc cuelga todo de /api/docs/** (ver el
-                        // bloque springdoc de application.yml). Abrir el path
-                        // NO abre los endpoints: /api/users/** sigue cayendo en
-                        // anyExchange().authenticated() como antes.
+                        // The documentation: the spec, the screen and its static
+                        // assets. Anonymous on purpose -you cannot ask for a
+                        // token on the page that explains how to get it- and
+                        // that is why it is ONE single line: springdoc hangs
+                        // everything off /api/docs/** (see the springdoc block
+                        // of application.yml). Opening the path does NOT open
+                        // the endpoints: /api/users/** keeps falling into
+                        // anyExchange().authenticated() as before.
                         .pathMatchers("/api/docs/**").permitAll()
                         // R3: NO hasRole/hasAuthority here. Everything private
                         // is authenticated() and nothing more. The role

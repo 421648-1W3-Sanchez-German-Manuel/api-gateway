@@ -15,8 +15,9 @@ import java.util.stream.Stream;
  * incoming header.
  */
 public record PrincipalContext(PrincipalType type, String subject, List<String> roles,
-                               List<String> scopes, String sid, String est,
-                               Boolean pwd, Boolean onb, String onBehalfOf) {
+                               List<String> scopes, String sid, String accountStatus,
+                               Boolean passwordChangeRequired, Boolean onboardingPending,
+                               String onBehalfOf) {
 
     public static PrincipalContext from(Jwt jwt) {
         PrincipalType type = PrincipalType.from(jwt.getClaimAsString("type"));
@@ -25,7 +26,7 @@ public record PrincipalContext(PrincipalType type, String subject, List<String> 
         if (type == PrincipalType.USER) {
             return new PrincipalContext(type, jwt.getSubject(), roles, List.of(),
                     jwt.getClaimAsString("sid"), jwt.getClaimAsString("est"),
-                    booleanoDe(jwt, "pwd"), booleanoDe(jwt, "onb"), null);
+                    booleanClaim(jwt, "pwd"), booleanClaim(jwt, "onb"), null);
         }
 
         List<String> scopes = normalize(Arrays.asList(
@@ -49,13 +50,13 @@ public record PrincipalContext(PrincipalType type, String subject, List<String> 
     }
 
     /**
-     * Lee un claim booleano sin asumir su tipo JSON. Si users-service emite
-     * {@code "true"} (string) en vez de {@code true}, el
-     * {@code jwt.getClaim("pwd")} generico tira {@code ClassCastException} y
-     * el gateway contesta 500 por un cambio inocente del otro equipo.
-     * Tipo desconocido o ausente -> null (el llamador decide).
+     * Reads a boolean claim without assuming its JSON type. If users-service
+     * emits {@code "true"} (string) instead of {@code true}, the generic
+     * {@code jwt.getClaim("pwd")} throws {@code ClassCastException} and the
+     * gateway answers 500 because of an innocent change by the other team.
+     * Unknown or missing type -> null (the caller decides).
      */
-    public static Boolean booleanoDe(Jwt jwt, String claim) {
+    public static Boolean booleanClaim(Jwt jwt, String claim) {
         Object v = jwt.getClaims().get(claim);
         return switch (v) {
             case null -> null;

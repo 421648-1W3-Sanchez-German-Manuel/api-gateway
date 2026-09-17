@@ -12,20 +12,20 @@ import java.net.URI;
 import java.util.List;
 
 /**
- * Genera las rutas dinamicas en Java, leyendo la allowlist tipada de
- * {@link GatewayRoutingProperties}. Reemplaza al DiscoveryClient locator
- * cuya {@code include-expression} evalua SpEL sin llamadas a metodo
- * (ver {@link DiscoveryLocatorConfig} para el detalle del bug que esto
- * resuelve).
+ * Generates the dynamic routes in Java, reading the typed allowlist of
+ * {@link GatewayRoutingProperties}. It replaces the DiscoveryClient locator
+ * whose {@code include-expression} evaluates SpEL without method calls
+ * (see {@link DiscoveryLocatorConfig} for the detail of the bug this
+ * solves).
  *
- * <p>Beneficios extra respecto del locator dinamico:
+ * <p>Extra benefits over the dynamic locator:
  * <ul>
- *   <li>Una sola fuente para la allowlist - la que ya consumen los guards y
- *       {@code ServiceAudienceFilter}.</li>
- *   <li>Un servicio en la allowlist pero sin instancias devuelve 503 con
- *       {@code Retry-After} (vía el fallback del breaker), nunca 404 - un
- *       404 dice "este endpoint no existe", que es falso y manda a buscar
- *       el error donde no esta.</li>
+ *   <li>A single source for the allowlist - the one the guards and
+ *       {@code ServiceAudienceFilter} already consume.</li>
+ *   <li>A service on the allowlist but with no instances returns 503 with
+ *       {@code Retry-After} (via the breaker's fallback), never 404 - a
+ *       404 says "this endpoint does not exist", which is false and sends
+ *       you looking for the error where it is not.</li>
  * </ul>
  */
 @Configuration
@@ -36,22 +36,22 @@ public class AllowlistRouteLocator {
     public AllowlistRouteLocator(GatewayRoutingProperties props) { this.props = props; }
 
     /**
-     * Bean que Spring Cloud Gateway consume para armar la tabla de rutas.
-     * Devuelve un {@code Flux} de definiciones, una por cada serviceId
-     * presente en la allowlist.
+     * Bean that Spring Cloud Gateway consumes to build the route table.
+     * It returns a {@code Flux} of definitions, one per serviceId present in
+     * the allowlist.
      */
     @Bean
     public RouteDefinitionLocator allowlistRouteDefinitions() {
-        List<RouteDefinition> definiciones = props.allowlist().stream()
+        List<RouteDefinition> definitions = props.allowlist().stream()
                 .map(this::routeFor)
                 .toList();
-        return () -> Flux.fromIterable(definiciones);
+        return () -> Flux.fromIterable(definitions);
     }
 
     /**
-     * users-service -> ruta con {@code id=allowlist-users-service},
-     * {@code uri=lb://users-service} y {@code Path=/api/users/**}.
-     * Sin filtros: R7, el path NO se reescribe.
+     * users-service -> route with {@code id=allowlist-users-service},
+     * {@code uri=lb://users-service} and {@code Path=/api/users/**}.
+     * No filters: R7, the path is NOT rewritten.
      */
     private RouteDefinition routeFor(String serviceId) {
         RouteDefinition def = new RouteDefinition();

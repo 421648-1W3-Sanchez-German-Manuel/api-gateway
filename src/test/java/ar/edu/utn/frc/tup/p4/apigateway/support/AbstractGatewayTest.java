@@ -19,28 +19,30 @@ import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Base de los tests de integracion. Levanta:
- *  - un MockWebServer que sirve el JWKS con la key de TokenFactory;
- *  - un MockWebServer que hace de microservicio destino y REGISTRA lo que
- *    recibe, para poder afirmar sobre los headers inyectados;
- *  - Redis real, porque la sesion unica y el fail-mode de DEC-01 no se
- *    pueden simular con un mock sin perder justamente lo que se quiere probar.
+ * Base for the integration tests. It brings up:
+ *  - a MockWebServer serving the JWKS with TokenFactory's key;
+ *  - a MockWebServer acting as the destination microservice and RECORDING
+ *    what it receives, so assertions can be made on the injected headers;
+ *  - real Redis, because the single session and the fail-mode of DEC-01
+ *    cannot be simulated with a mock without losing exactly what is meant to
+ *    be tested.
  *
- * PATRON SINGLETON, deliberado: los tres recursos se arrancan UNA vez para
- * toda la JVM y no se apagan al terminar cada clase.
+ * SINGLETON PATTERN, deliberate: the three resources are started ONCE for the
+ * whole JVM and are not shut down when each class finishes.
  *
- * Con @Testcontainers + @Container, JUnit apaga el contenedor al terminar la
- * clase y lo vuelve a levantar en OTRO PUERTO para la siguiente — pero Spring
- * CACHEA el contexto entre clases, asi que el contexto reusado sigue apuntando
- * al puerto viejo y todo falla con RedisCommandTimeoutException. Los tests
- * pasan de a uno y fallan corridos: el sintoma mas confuso posible.
+ * With @Testcontainers + @Container, JUnit shuts the container down when the
+ * class ends and brings it back on ANOTHER PORT for the next one — but Spring
+ * CACHES the context between classes, so the reused context keeps pointing at
+ * the old port and everything fails with RedisCommandTimeoutException. The
+ * tests pass one by one and fail all together: the most confusing symptom
+ * possible.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class AbstractGatewayTest {
 
     protected static final RedisContainer REDIS;
     protected static final MockWebServer JWKS;
-    protected static final MockWebServer DESTINO;
+    protected static final MockWebServer DESTINATION;
 
     static {
         REDIS = new RedisContainer(DockerImageName.parse("redis:7-alpine"));
@@ -56,8 +58,8 @@ public abstract class AbstractGatewayTest {
             }
         });
 
-        DESTINO = new MockWebServer();
-        DESTINO.setDispatcher(new Dispatcher() {
+        DESTINATION = new MockWebServer();
+        DESTINATION.setDispatcher(new Dispatcher() {
             @Override
             public MockResponse dispatch(RecordedRequest req) {
                 return new MockResponse().setResponseCode(200).setBody("ok");
@@ -66,7 +68,7 @@ public abstract class AbstractGatewayTest {
 
         try {
             JWKS.start();
-            DESTINO.start();
+            DESTINATION.start();
         } catch (IOException e) {
             throw new IllegalStateException("Could not start the MockWebServer instances", e);
         }
@@ -74,117 +76,120 @@ public abstract class AbstractGatewayTest {
     }
 
     @LocalServerPort
-    protected int puerto;
+    protected int port;
 
-    protected WebTestClient cliente;
+    protected WebTestClient client;
 
     /**
-     * Se construye a mano contra el puerto real en vez de inyectar el bean:
-     * asi queda explicito que los requests atraviesan el pipeline COMPLETO
-     * por HTTP, no un mock del contexto. El timeout largo es para los tests
-     * de resiliencia, que provocan destinos lentos a proposito.
+     * Built by hand against the real port instead of injecting the bean: that
+     * makes it explicit that the requests go through the COMPLETE pipeline
+     * over HTTP, not a mock of the context. The long timeout is for the
+     * resilience tests, which provoke slow destinations on purpose.
      */
     @BeforeEach
-    void armarCliente() throws InterruptedException {
-        cliente = WebTestClient.bindToServer()
-                .baseUrl("http://localhost:" + puerto)
+    void buildClient() throws InterruptedException {
+        client = WebTestClient.bindToServer()
+                .baseUrl("http://localhost:" + port)
                 .responseTimeout(Duration.ofSeconds(30))
                 .build();
 
-        // El MockWebServer es singleton de JVM, asi que su cola de requests es
-        // COMPARTIDA entre clases de test. Sin drenarla, un takeRequest()
-        // devuelve el request que dejo otro test y la asercion mide otra cosa.
-        // Vaciarla en cada test es lo que hace que el orden de ejecucion no
-        // cambie el resultado.
-        while (DESTINO.takeRequest(1, TimeUnit.MILLISECONDS) != null) {
-            // drenar
+        // The MockWebServer is a JVM singleton, so its request queue is
+        // SHARED between test classes. Without draining it, a takeRequest()
+        // returns the request another test left and the assertion measures
+        // something else. Draining it in each test is what makes the
+        // execution order irrelevant.
+        while (DESTINATION.takeRequest(1, TimeUnit.MILLISECONDS) != null) {
+            // drain
         }
     }
 
     @DynamicPropertySource
-    static void propiedades(DynamicPropertyRegistry r) {
+    static void properties(DynamicPropertyRegistry r) {
         r.add("spring.data.redis.host", REDIS::getHost);
         r.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
 
         r.add("spring.security.oauth2.resourceserver.jwt.jwk-set-uri",
                 () -> JWKS.url("/.well-known/jwks.json").toString());
 
-        // DISCOVERY SIMPLE, no rutas estaticas. Las rutas las genera el
-        // AllowlistRouteLocator de produccion a partir de la allowlist, y el
-        // load balancer resuelve lb://{serviceId} contra estas instancias.
+        // SIMPLE DISCOVERY, not static routes. The routes are generated by
+        // the production AllowlistRouteLocator from the allowlist, and the
+        // load balancer resolves lb://{serviceId} against these instances.
         //
-        // Antes esto eran rutas estaticas apuntando directo al MockWebServer.
-        // Se veia mas simple y era mentira: dejaba SIN PROBAR la generacion de
-        // rutas, que es donde estaba el bug del locator SpEL — el Gateway
-        // levantaba con la tabla vacia y contestaba 404 a todo, con los 101
-        // tests en verde. Un test que reemplaza el mecanismo que dice probar
-        // no test nada.
+        // Before this they were static routes pointing directly at the
+        // MockWebServer. It looked simpler and it was a lie: it left UNTESTED
+        // the route generation, which is where the SpEL locator bug was — the
+        // Gateway came up with an empty table and answered 404 to everything,
+        // with all 101 tests green. A test that replaces the mechanism it
+        // claims to test tests nothing.
         //
-        // De paso, con uri lb://users-service el ServiceAudienceFilter resuelve
-        // el destino por el HOST de la ruta, que es la rama que corre en
-        // produccion; con http://localhost:PORT caia siempre en la derivacion
-        // por path, o sea probaba la rama de respaldo.
-        String destinoUri = "http://localhost:" + DESTINO.getPort();
+        // On the way, with uri lb://users-service the ServiceAudienceFilter
+        // resolves the destination by the route's HOST, which is the branch
+        // that runs in production; with http://localhost:PORT it always fell
+        // into the derivation by path, i.e. it tested the fallback branch.
+        String destinationUri = "http://localhost:" + DESTINATION.getPort();
 
         r.add("spring.cloud.discovery.client.simple.instances.users-service[0].uri",
-                () -> destinoUri);
-        // Un micro ajeno, para que AccountStateGuardIT y ServiceAudienceIT
-        // puedan probar el gate grueso y el aud acotado a otro destino.
+                () -> destinationUri);
+        // A foreign micro, so AccountStateGuardIT and ServiceAudienceIT can
+        // test the coarse gate and the audience bounded to another
+        // destination.
         r.add("spring.cloud.discovery.client.simple.instances.cursos-service[0].uri",
-                () -> destinoUri);
+                () -> destinationUri);
         r.add("gateway.routing.allowlist", () -> "users-service,cursos-service");
 
-        // Eureka no: alcanza con el discovery simple, que no necesita servidor.
+        // No Eureka: the simple discovery suffices, it needs no server.
         r.add("eureka.client.enabled", () -> "false");
     }
 
     /**
-     * Consume y devuelve el ultimo request que llego al destino.
+     * Consumes and returns the last request that arrived at the destination.
      *
-     * Con timeout, y NUNCA sin el: `takeRequest()` sin argumentos espera para
-     * siempre. Si el request no llega al destino -- porque un filtro lo rechazo
-     * antes de rutear, que es el bug mas comun de este pipeline -- el test no
-     * falla: CUELGA la corrida entera, sin una linea que diga por que. Ya paso
-     * una vez y se comio cuarenta minutos hasta que alguien miro un jstack.
+     * With a timeout, and NEVER without it: `takeRequest()` without arguments
+     * waits forever. If the request does not reach the destination -- because
+     * a filter rejected it before routing, which is this pipeline's most
+     * common bug -- the test does not fail: it HANGS the whole run, with not
+     * a single line explaining why. It happened once and ate forty minutes
+     * until someone looked at a jstack.
      *
-     * El fallo con timeout dice lo unico que hay que saber: el request no llego,
-     * asi que alguien de la cadena contesto antes de rutear.
+     * The timeout failure says the only thing there is to know: the request
+     * did not arrive, so someone in the chain answered before routing.
      */
-    protected RecordedRequest ultimoRequestAlDestino() throws InterruptedException {
-        RecordedRequest recibido = DESTINO.takeRequest(10, TimeUnit.SECONDS);
-        if (recibido == null) {
+    protected RecordedRequest lastRequestToDestination() throws InterruptedException {
+        RecordedRequest received = DESTINATION.takeRequest(10, TimeUnit.SECONDS);
+        if (received == null) {
             throw new AssertionError(
-                    "El request no llego al destino en 10s: algun filtro de la cadena lo "
-                    + "rechazo antes de rutear. Mira el status de la respuesta.");
+                    "The request did not reach the destination within 10s: some filter in the "
+                    + "chain rejected it before routing. Check the response status.");
         }
-        return recibido;
+        return received;
     }
 
     // -----------------------------------------------------------------------
-    // Sesion en Redis
+    // Session in Redis
     //
-    // El formato de la key NO es del Gateway: la escribe el login de
-    // users-service (DEC-22) y el Gateway solo la lee. Vive aca, en un solo
-    // lugar, porque la necesitan al menos ocho IT repartidos en cuatro lotes:
-    // si cada uno la arma a mano, alcanza con que alguien escriba `sessions:`
-    // en plural para que su test pase en verde probando nada.
+    // The key format is NOT the Gateway's: it is written by users-service's
+    // login (DEC-22) and the Gateway only reads it. It lives here, in one
+    // single place, because at least eight ITs spread across four batches
+    // need it: if each one built it by hand, it would be enough for someone
+    // to write `sessions:` in plural for its test to pass green testing
+    // nothing.
     //
-    // El `sid` tiene que ser EL MISMO que el claim `sid` del token, o
-    // SessionGuard lo rechaza con session-superseded, que es justo lo que estos
-    // tests no estan probando.
+    // The `sid` must be THE SAME as the token's `sid` claim, or SessionGuard
+    // rejects it with session-superseded, which is exactly what these tests
+    // are not testing.
     // -----------------------------------------------------------------------
 
-    /** La key exacta que escribe users-service. */
+    /** The exact key that users-service writes. */
     protected static String sessionKey(Object userId) {
         return "session:" + userId;
     }
 
-    /** Deja la sesion de `userId` vigente con ese `sid`. */
+    /** Makes `userId`'s session CURRENT with that `sid`. */
     protected void seedSession(ReactiveStringRedisTemplate redis, Object userId, String sid) {
         redis.opsForValue().set(sessionKey(userId), sid).block();
     }
 
-    /** Borra la sesion: es lo que hace un logout, y el 401 que sigue es DEC-22. */
+    /** Deletes the session: that is what a logout does, and the 401 that follows is DEC-22. */
     protected void clearSession(ReactiveStringRedisTemplate redis, Object userId) {
         redis.delete(sessionKey(userId)).block();
     }

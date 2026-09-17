@@ -8,17 +8,17 @@ import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 /**
- * Configuracion explicita de Redis. Spring Boot autoprovee el
- * {@link ReactiveStringRedisTemplate}; lo que aca se hace es asegurar que la
- * serializacion sea SIEMPRE {@link StringRedisSerializer} (la autoconfig
- * lo hace por defecto, pero atarse a eso es fragil: cambia entre versiones)
- * y dejar visible en un solo lugar el nombre de la key que el Gateway lee
- * contra Redis ({@code session:{userId}}).
+ * Explicit Redis configuration. Spring Boot auto-provides the
+ * {@link ReactiveStringRedisTemplate}; what is done here is to make sure the
+ * serialization is ALWAYS {@link StringRedisSerializer} (the autoconfig does
+ * it by default, but relying on that is fragile: it changes between
+ * versions) and to leave visible in a single place the name of the key the
+ * Gateway reads against Redis ({@code session:{userId}}).
  *
- * <p>Las properties de host/port/timeout/pool viven en {@code application.yml}
- * (lo mantiene Base) bajo {@code spring.data.redis.*}; este lote NO las
- * toca porque la configuracion actual ya cumple DEC-42 (timeout 500ms +
- * pool 16/8/2).
+ * <p>The host/port/timeout/pool properties live in {@code application.yml}
+ * (maintained by Base) under {@code spring.data.redis.*}; this batch does NOT
+ * touch them because the current configuration already meets DEC-42
+ * (timeout 500ms + pool 16/8/2).
  */
 @Configuration
 public class RedisConfig {

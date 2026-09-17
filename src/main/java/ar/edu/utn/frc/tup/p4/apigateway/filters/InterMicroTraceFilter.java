@@ -23,30 +23,30 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Traza de desarrollo: una entrada por llamada que el Gateway enruta a un
- * micro, origen (persona / servicio) incluido.
+ * Development trace: one entry per call the Gateway routes to a micro, origin
+ * (person / service) included.
  *
- * Es la materia prima de la pestaña Logs del buzón de desarrollo: con la
- * demo de echo-service se codifican TRES entradas en una sola operación —
- * la persona pegándole a {@code /api/echo/**}, y echo pidiendo su token de
- * servicio y llamando a users-service, siempre por acá.
+ * It is the raw material of the Logs tab of the development mailbox: with the
+ * echo-service demo, THREE entries are encoded in a single operation — the
+ * person hitting {@code /api/echo/**}, and echo asking for its service token
+ * and calling users-service, always through here.
  *
- * ⛔ SOLO observabilidad de desarrollo, y por eso es best-effort a propósito:
- * un fallo de Redis, de serialización o de cualquier cosa NO puede atrasar ni
- * tumbar un request que ya pasó el pipeline. El filtro registra en fire-and
- * -forget (subscribe sin espera), nunca bloquea el event loop y no se mete en
- * la cadena de respuesta.
+ * ⛔ Development observability ONLY, and therefore best-effort on purpose:
+ * a Redis, serialization or any other failure CANNOT delay or take down a
+ * request that already passed the pipeline. The filter records in
+ * fire-and-forget (subscribe without waiting), never blocks the event loop and
+ * does not touch the response chain.
  *
- * No guarda bodies ni el {@code Authorization}: igual que el LoggingFilter,
- * un token almacenado es un token que alguien puede leer con una consulta.
+ * It does not store bodies nor the {@code Authorization}: like the
+ * LoggingFilter, a stored token is a token someone can read with a query.
  */
 @Component
 public class InterMicroTraceFilter implements GlobalFilter, Ordered {
 
-    /** La lista en Redis que lee el buzón de desarrollo (`/dev/logs`). */
+    /** The Redis list that the development mailbox (`/dev/logs`) reads. */
     public static final String REDIS_KEY = "intermicro:trace";
-    /** Techo de entradas; la más vieja se descarta con LTRIM. */
-    public static final int MAX_ENTRADAS = 200;
+    /** Entry ceiling; the oldest one is discarded with LTRIM. */
+    public static final int MAX_ENTRIES = 200;
 
     private static final Logger log = LoggerFactory.getLogger(InterMicroTraceFilter.class);
 
@@ -60,74 +60,74 @@ public class InterMicroTraceFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        // La ruta se resuelve ANTES de que arranque la cadena de GlobalFilters
-        // (lo garantiza PipelineOrderIT), así que el destino ya está disponible
-        // acá mismo, sea cual sea el status con el que termine el request.
+        // The route is resolved BEFORE the GlobalFilter chain starts
+        // (PipelineOrderIT guarantees it), so the destination is already
+        // available right here, whatever status the request ends with.
         Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
-        String destino = (route == null || route.getUri() == null || route.getUri().getHost() == null)
+        String destination = (route == null || route.getUri() == null || route.getUri().getHost() == null)
                 ? null : route.getUri().getHost();
         Jwt jwt = exchange.getAttribute(PrivateRouteGuard.ATTR_JWT);
 
         ServerHttpRequest req = exchange.getRequest();
-        long inicio = System.nanoTime();
+        long start = System.nanoTime();
 
-        return chain.filter(exchange).doFinally(señal -> {
-            if (destino == null) {
-                // Sin ruta resuelta no hay comunicación con un micro que contar.
+        return chain.filter(exchange).doFinally(signal -> {
+            if (destination == null) {
+                // No resolved route means no micro communication to trace.
                 return;
             }
-            registrar(exchange, req, destino, jwt, System.nanoTime() - inicio);
+            record(exchange, req, destination, jwt, System.nanoTime() - start);
         });
     }
 
-    private void registrar(ServerWebExchange exchange, ServerHttpRequest req, String destino,
-                           Jwt jwt, long nanos) {
-        String origen;
+    private void record(ServerWebExchange exchange, ServerHttpRequest req, String destination,
+                        Jwt jwt, long nanos) {
+        String origin;
         String actor = null;
         if (jwt == null) {
-            origen = "ANON";
+            origin = "ANON";
         } else if ("service".equals(jwt.getClaimAsString("type"))) {
-            origen = "MS";
+            origin = "MS";
             actor = jwt.getSubject();
         } else {
-            origen = "PERSON";
+            origin = "PERSON";
             actor = jwt.getSubject();
         }
 
         HttpStatusCode status = exchange.getResponse().getStatusCode();
-        Map<String, Object> entrada = new LinkedHashMap<>();
-        entrada.put("ts", Instant.now().toString());
-        entrada.put("requestId", req.getHeaders().getFirst(IdentityHeaders.REQUEST_ID));
-        entrada.put("traceId", req.getHeaders().getFirst("traceparent"));
-        entrada.put("origen", origen);
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("ts", Instant.now().toString());
+        entry.put("requestId", req.getHeaders().getFirst(IdentityHeaders.REQUEST_ID));
+        entry.put("traceId", req.getHeaders().getFirst("traceparent"));
+        entry.put("origen", origin);
         if (actor != null) {
-            entrada.put("actor", actor);
+            entry.put("actor", actor);
         }
-        entrada.put("destino", destino);
-        entrada.put("metodo", req.getMethod() == null ? "-" : req.getMethod().name());
-        entrada.put("path", req.getPath().value());
-        entrada.put("status", status == null ? 0 : status.value());
-        entrada.put("ms", nanos / 1_000_000);
+        entry.put("destino", destination);
+        entry.put("metodo", req.getMethod() == null ? "-" : req.getMethod().name());
+        entry.put("path", req.getPath().value());
+        entry.put("status", status == null ? 0 : status.value());
+        entry.put("ms", nanos / 1_000_000);
 
         String json;
         try {
-            json = mapper.writeValueAsString(entrada);
+            json = mapper.writeValueAsString(entry);
         } catch (JsonProcessingException e) {
-            log.warn("TRACE_NO_SERIALIZABLE {}", e.getMessage());
+            log.warn("TRACE_NOT_SERIALIZABLE {}", e.getMessage());
             return;
         }
 
         redis.opsForList().leftPush(REDIS_KEY, json)
-                .then(redis.opsForList().trim(REDIS_KEY, 0, MAX_ENTRADAS - 1))
+                .then(redis.opsForList().trim(REDIS_KEY, 0, MAX_ENTRIES - 1))
                 .onErrorResume(e -> {
-                    // Best-effort: la traza nunca tumba un request ya resuelto.
-                    log.warn("TRACE_FALLO_ALMACEN {}", e.getMessage());
+                    // Best-effort: the trace never takes down an already resolved request.
+                    log.warn("TRACE_STORE_FAILED {}", e.getMessage());
                     return Mono.empty();
                 })
                 .subscribe();
     }
 
-    /** Después de la propagación de identidad (70) y antes del bulkhead (80). */
+    /** After identity propagation (70) and before the bulkhead (80). */
     @Override
     public int getOrder() {
         return 75;

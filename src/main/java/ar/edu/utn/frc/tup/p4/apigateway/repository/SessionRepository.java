@@ -5,12 +5,12 @@ import reactor.core.publisher.Mono;
 public interface SessionRepository {
 
     /**
-     * DEC-01 - Las tres ramas son un TIPO, no un Optional con un flag: el
-     * compilador obliga a distinguir "no hay sesion" (401) de "Redis no
-     * responde" (503).
+     * DEC-01 - The three branches are a TYPE, not an Optional with a flag: the
+     * compiler forces you to tell "no session" (401) apart from "Redis is not
+     * responding" (503).
      *
-     * Con Optional<String> las dos se ven igual — vacio — y esa confusion es
-     * exactamente como nace un fail-open por accidente.
+     * With Optional<String> both look the same — empty — and that confusion is
+     * exactly how an accidental fail-open is born.
      */
     sealed interface SessionState {
 

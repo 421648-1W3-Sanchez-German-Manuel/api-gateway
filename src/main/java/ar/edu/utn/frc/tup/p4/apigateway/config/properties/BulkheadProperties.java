@@ -7,15 +7,18 @@ import org.springframework.validation.annotation.Validated;
 import java.time.Duration;
 
 /**
- * DEC-42 - concurrencia maxima POR DESTINO. El breaker mide fallas, el bulkhead
- * mide ocupacion: un destino que todavia no falla pero tarda 3 s por request se
- * come el pool del Gateway entero antes de que la tasa de error llegue al 50%
- * que abre el breaker. Son dos fallas distintas y hacen falta las dos.
+ * DEC-42 - maximum concurrency PER DESTINATION. The breaker measures
+ * failures, the bulkhead measures occupancy: a destination that has not
+ * failed yet but takes 3 s per request eats the whole Gateway pool before the
+ * error rate reaches the 50% that opens the breaker. They are two different
+ * failures and both are needed.
  *
- * @param enabled            apagarlo deja pasar todo, sin limite de concurrencia
- * @param maxConcurrentCalls requests en vuelo simultaneas por serviceId destino
- * @param maxWait            cuanto espera una request por un permiso antes de
- *                           rechazarse. 0 = rechaza en el acto (fail fast)
+ * @param enabled            turning it off lets everything through, no
+ *                           concurrency limit
+ * @param maxConcurrentCalls simultaneous in-flight requests per destination
+ *                           serviceId
+ * @param maxWait            how long a request waits for a permit before it
+ *                           is rejected. 0 = rejects on the spot (fail fast)
  */
 @Validated
 @ConfigurationProperties(prefix = "gateway.bulkhead")

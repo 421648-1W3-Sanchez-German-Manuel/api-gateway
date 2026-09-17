@@ -8,10 +8,10 @@ import org.springframework.validation.annotation.Validated;
 import java.time.Duration;
 
 /**
- * Los umbrales de resiliencia, en CONFIG y no en codigo. Calibrar para carga
- * (RF-NFR-03, 120 concurrentes) es cambiar env y recrear el gateway, no un PR
- * con rebuild: {@code BULKHEAD_MAX_CONCURRENT=1 docker compose up -d
- * api-gateway} es la forma de comprobar que el bulkhead esta vivo.
+ * The resilience thresholds, in CONFIG and not in code. Calibrating for load
+ * (RF-NFR-03, 120 concurrent) is changing env and recreating the gateway, not
+ * a PR with a rebuild: {@code BULKHEAD_MAX_CONCURRENT=1 docker compose up -d
+ * api-gateway} is the way to check that the bulkhead is alive.
  */
 @Validated
 @ConfigurationProperties(prefix = "gateway.resilience")

@@ -8,13 +8,13 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 /**
- * Mapea un {@link ResponseStatusException} al cuerpo RFC 9457 que
- * {@link ProblemDetails} ya escribe, con mensajes FIJOS.
+ * Maps a {@link ResponseStatusException} to the RFC 9457 body that
+ * {@link ProblemDetails} already writes, with FIXED messages.
  *
- * <p>El mensaje de la excepcion NUNCA se copia al cuerpo: puede contener paths
- * internos, nombres de beans o fragmentos del request. Lo que ayuda a quien
- * llama es el {@code type} (rama de manejo) y un detalle legible, no el
- * volcado del framework.
+ * <p>The exception's message is NEVER copied to the body: it can contain
+ * internal paths, bean names or request fragments. What helps the caller is
+ * the {@code type} (the handling branch) and a readable detail, not the
+ * framework's dump.
  */
 public final class GatewayProblemHandler {
 
@@ -24,22 +24,22 @@ public final class GatewayProblemHandler {
     public static Mono<Void> handle(ServerWebExchange exchange, ResponseStatusException rse) {
         return switch (rse.getStatusCode().value()) {
             case 404 -> ProblemDetails.write(exchange, HttpStatus.NOT_FOUND,
-                    ErrorTypes.ROUTE_NOT_FOUND, "Ruta inexistente",
-                    "La ruta solicitada no existe.");
+                    ErrorTypes.ROUTE_NOT_FOUND, "Route not found",
+                    "The requested route does not exist.");
             case 405 -> ProblemDetails.write(exchange, HttpStatus.METHOD_NOT_ALLOWED,
-                    ErrorTypes.METHOD_NOT_ALLOWED, "Metodo no permitido",
-                    "El metodo HTTP no esta permitido para esta ruta.");
+                    ErrorTypes.METHOD_NOT_ALLOWED, "Method not allowed",
+                    "The HTTP method is not allowed for this route.");
             case 403 -> ProblemDetails.write(exchange, HttpStatus.FORBIDDEN,
-                    ErrorTypes.ACCESS_DENIED, "Acceso denegado",
-                    "No tiene permiso para acceder a este recurso.");
-            default -> generico(exchange, rse.getStatusCode());
+                    ErrorTypes.ACCESS_DENIED, "Access denied",
+                    "You do not have permission to access this resource.");
+            default -> generic(exchange, rse.getStatusCode());
         };
     }
 
-    private static Mono<Void> generico(ServerWebExchange exchange, HttpStatusCode codigo) {
-        HttpStatus status = codigo instanceof HttpStatus h ? h : HttpStatus.INTERNAL_SERVER_ERROR;
+    private static Mono<Void> generic(ServerWebExchange exchange, HttpStatusCode code) {
+        HttpStatus status = code instanceof HttpStatus h ? h : HttpStatus.INTERNAL_SERVER_ERROR;
         return ProblemDetails.write(exchange, status,
                 ErrorTypes.UNEXPECTED_ERROR, status.getReasonPhrase(),
-                "La solicitud no pudo procesarse.");
+                "The request could not be processed.");
     }
 }

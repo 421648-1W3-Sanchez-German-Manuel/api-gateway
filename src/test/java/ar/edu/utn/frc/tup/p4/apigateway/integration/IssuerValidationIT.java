@@ -11,40 +11,40 @@ import java.util.UUID;
  * DEC-44 - validated ALWAYS, with no flag. The safety net is
  * TokenContractTest on the users-service side, plus a 401 that says WHICH claim
  * was missing - that turns "everything returns 401 and I do not know why" into
- * de grep.
+ * a grep.
  */
 class IssuerValidationIT extends AbstractGatewayTest {
 
     @Test
-    void un_token_con_iss_distinto_es_rechazado() {
-        String malo = TokenFactory.persona(UUID.randomUUID(), "sid-1",
-                b -> b.issuer("otro-emisor"));
-        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, malo)
+    void a_token_with_a_different_iss_is_rejected() {
+        String bad = TokenFactory.person(UUID.randomUUID(), "sid-1",
+                b -> b.issuer("another-issuer"));
+        client.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, bad)
                 .exchange().expectStatus().isUnauthorized();
     }
 
     @Test
-    void un_token_SIN_iss_es_rechazado() {
+    void a_token_WITHOUT_iss_is_rejected() {
         // This is exactly the token an attacker would forge: that is why there
-        // validador tolerante que acepte "ausente o correcto".
-        String sinIss = TokenFactory.persona(UUID.randomUUID(), "sid-1", b -> b.issuer(null));
-        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, sinIss)
+        // is no tolerant validator that accepts "absent or correct".
+        String noIss = TokenFactory.person(UUID.randomUUID(), "sid-1", b -> b.issuer(null));
+        client.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, noIss)
                 .exchange().expectStatus().isUnauthorized();
     }
 
     @Test
-    void un_token_con_algoritmo_distinto_de_RS256_es_rechazado() {
+    void a_token_with_an_algorithm_other_than_RS256_is_rejected() {
         // "none" included. jws-algorithms: RS256 in the yml covers it.
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.hs256Falso())
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.hs256Forgery())
                 .exchange().expectStatus().isUnauthorized();
     }
 
     @Test
-    void el_cuerpo_del_401_NO_dice_que_claim_falto() {
+    void the_401_body_does_NOT_say_which_claim_was_missing() {
         // An attacker is not told what the token was missing: that goes to the log.
-        String malo = TokenFactory.persona(UUID.randomUUID(), "s", b -> b.issuer("otro"));
-        cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, malo)
+        String bad = TokenFactory.person(UUID.randomUUID(), "s", b -> b.issuer("another"));
+        client.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, bad)
                 .exchange().expectStatus().isUnauthorized()
                 .expectBody().jsonPath("$.detail").value(d ->
                         org.assertj.core.api.Assertions.assertThat((String) d)

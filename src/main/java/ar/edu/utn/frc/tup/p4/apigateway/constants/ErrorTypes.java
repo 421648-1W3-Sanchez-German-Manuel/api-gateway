@@ -3,9 +3,9 @@ package ar.edu.utn.frc.tup.p4.apigateway.constants;
 import java.net.URI;
 
 /**
- * Los MISMOS type que devuelve users-service: un solo espacio de firstNames de
- * errores para toda la plataforma, asi el frontend tiene una sola rama de
- * manejo por cada situacion y no le importa quien contesto.
+ * The SAME types that users-service returns: one single namespace of error
+ * types for the whole platform, so the frontend has one handling branch per
+ * situation and does not care who answered.
  */
 public final class ErrorTypes {
 
@@ -23,12 +23,12 @@ public final class ErrorTypes {
     public static final URI ROUTE_NOT_FOUND = URI.create(BASE + "route-not-found");
     public static final URI METHOD_NOT_ALLOWED = URI.create(BASE + "method-not-allowed");
     /**
-     * Paraguas para cualquier otro ResponseStatusException que llegue al
-     * handler general (400, 409, 415, ...). Mensajes fijos y sanitizados:
-     * nunca se copia el mensaje de la excepcion al cuerpo.
+     * Umbrella for any other ResponseStatusException that reaches the general
+     * handler (400, 409, 415, ...). Fixed, sanitized messages: the exception's
+     * message is never copied to the body.
      */
     public static final URI UNEXPECTED_ERROR = URI.create(BASE + "unexpected-error");
-    /** DEC-24: el MISMO que usa auth/ para su limite por email. */
+    /** DEC-24: the SAME one auth/ uses for its per-email limit. */
     public static final URI TOO_MANY_ATTEMPTS = URI.create(BASE + "too-many-attempts");
 
     private ErrorTypes() {

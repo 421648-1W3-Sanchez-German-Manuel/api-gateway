@@ -10,41 +10,41 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * No declara rutas dinamicas: las genera {@link AllowlistRouteLocator} a
- * partir de {@code gateway.routing.allowlist}. Esta clase valida la lista en
- * el arranque y expone el derivado serviceId &lt;-&gt; segmento de path.
+ * It declares no dynamic routes: {@link AllowlistRouteLocator} generates them
+ * from {@code gateway.routing.allowlist}. This class validates the list at
+ * startup and exposes the derived serviceId &lt;-&gt; path segment mapping.
  *
- * <p>Antes esta generacion la hacia el {@code include-expression} del
- * DiscoveryClient locator. La SpEL {@code serviceId.toLowerCase()} reventaba
- * con {@code EL1004E} en el listener de refresco de rutas - NO en el
- * arranque -, y el Gateway quedaba levantado con la tabla vacia contestando
- * 404 a todo, sin stack trace visible. Mover la generacion a Java elimina
- * la SpEL del locator y deja el error de configuracion donde corresponde:
- * en el arranque.
+ * <p>That generation used to be done by the DiscoveryClient locator's
+ * {@code include-expression}. The SpEL {@code serviceId.toLowerCase()} blew up
+ * with {@code EL1004E} in the route-refresh listener - NOT at startup - and
+ * the Gateway stayed up with an empty table answering 404 to everything, with
+ * no visible stack trace. Moving the generation to Java removes the SpEL from
+ * the locator and leaves the configuration error where it belongs: at
+ * startup.
  */
 @Configuration
 public class DiscoveryLocatorConfig {
 
     private static final Logger log = LoggerFactory.getLogger(DiscoveryLocatorConfig.class);
 
-    /** Servicios de infraestructura: rutearlos a traves del Gateway es un bucle. */
-    private static final List<String> PROHIBIDOS = List.of("api-gateway", "eureka-server");
+    /** Infrastructure services: routing them through the Gateway is a loop. */
+    private static final List<String> FORBIDDEN = List.of("api-gateway", "eureka-server");
 
     private final GatewayRoutingProperties props;
 
     public DiscoveryLocatorConfig(GatewayRoutingProperties props) { this.props = props; }
 
-    /** Llamado desde los tests y desde Spring al arrancar. Es publico para eso. */
+    /** Called from tests and from Spring at startup. That is why it is public. */
     @PostConstruct
     public void validateAllowlist() {
-        for (String prohibido : PROHIBIDOS) {
+        for (String forbidden : FORBIDDEN) {
             if (props.allowlist().stream()
-                    .anyMatch(s -> s.toLowerCase(Locale.ROOT).equals(prohibido))) {
+                    .anyMatch(s -> s.toLowerCase(Locale.ROOT).equals(forbidden))) {
                 throw new IllegalStateException(
-                        "gateway.routing.allowlist no puede contener '" + prohibido + "': "
-                        + "rutear la infraestructura a traves del Gateway produce un bucle.");
+                        "gateway.routing.allowlist cannot contain '" + forbidden + "': "
+                        + "routing the infrastructure through the Gateway produces a loop.");
             }
         }
-        log.info("Allowlist de ruteo: {}", props.allowlist());
+        log.info("Routing allowlist: {}", props.allowlist());
     }
 }

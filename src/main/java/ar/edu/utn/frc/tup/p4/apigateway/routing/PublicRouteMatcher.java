@@ -4,26 +4,26 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
 
 /**
- * LA definicion de "ruta publica", en un solo lugar.
+ * THE definition of "public route", in one single place.
  *
- * <p>Antes vivia en dos lenguajes con dos semanticas: {@code SecurityConfig}
- * con Ant y {@code PublicRouteGuard} partiendo el path por "/" y mirando el
- * cuarto segmento. Dos matchers para el mismo concepto divergen en los bordes
- * (trailing slash, segmentos vacios, mayusculas): un cambio en uno y no en
- * otro abre un hueco en una direccion u otra. Ahora ambos consumen esto.
+ * <p>It used to live in two languages with two semantics: {@code SecurityConfig}
+ * with Ant and {@code PublicRouteGuard} splitting the path by "/" and looking
+ * at the fourth segment. Two matchers for the same concept diverge at the
+ * edges (trailing slash, empty segments, uppercase): changing one but not the
+ * other opens a gap in one direction or another. Now both consume this.
  *
- * <p>Las {@code expensive-routes} del rate-limit son OTRA cosa (lista del
- * operador, no el convenio public de §5) y siguen con su propio matcher.
+ * <p>The rate-limit's {@code expensive-routes} are ANOTHER thing (an operator
+ * list, not the §5 public convention) and keep their own matcher.
  */
 @Component
 public class PublicRouteMatcher {
 
-    /** El convenio §5: /api/{nombre}/public/**. Tambien lo usa SecurityConfig. */
+    /** The §5 convention: /api/{name}/public/**. SecurityConfig uses it too. */
     public static final String API_PUBLIC_PATTERN = "/api/*/public/**";
 
     private static final AntPathMatcher MATCHER = new AntPathMatcher();
 
-    public boolean esPublica(String path) {
+    public boolean isPublic(String path) {
         if (path == null) {
             return false;
         }

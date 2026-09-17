@@ -28,19 +28,19 @@ import java.util.Locale;
 /**
  * Pipeline step 10 - @Order(9) - DEC-42.
  *
- * <p>El eslabon que faltaba de la cadena del manifiesto (§"patrones aplicados"):
+ * <p>The missing link in the manifest's chain (§"patrones aplicados"):
  * rate limit -> <b>bulkhead</b> -> timeout -> retry -> circuit breaker -> fallback.
- * Cada capa cubre una falla distinta y por eso van todas.
+ * Each layer covers a different failure and that is why they all run.
  *
- * <p>Un semaforo por serviceId destino. Con un solo pool compartido, un destino
- * lento se lleva puestas las requests de los demas: el problema de Cursos se
- * convierte en una caida de login. Con un semaforo por destino, el que se
- * queda sin permisos es solo el destino lento.
+ * <p>One semaphore per destination serviceId. With a single shared pool, a slow
+ * destination takes everyone else's requests down with it: a Cursos problem
+ * becomes a login outage. With one semaphore per destination, the only one who
+ * runs out of permits is the slow destination.
  *
- * <p>Corre despues del ruteo -igual que {@link ServiceAudienceFilter}- porque
- * recien ahi se conoce el destino resuelto. Rechaza con el mismo 503 +
- * {@code Retry-After} que el fallback del breaker: para el cliente "el destino
- * no te puede atender ahora" es la misma situacion, la venga de donde venga.
+ * <p>It runs after routing -like {@link ServiceAudienceFilter}- because the
+ * resolved destination is only known there. It rejects with the same 503 +
+ * {@code Retry-After} as the breaker's fallback: for the client "the destination
+ * cannot serve you now" is the same situation, whichever layer it comes from.
  */
 @Component
 public class BulkheadFilter implements GlobalFilter, Ordered {
@@ -48,22 +48,23 @@ public class BulkheadFilter implements GlobalFilter, Ordered {
     private static final Logger log = LoggerFactory.getLogger(BulkheadFilter.class);
 
     private final BulkheadProperties props;
-    private final ResilienceProperties resiliencia;
+    private final ResilienceProperties resilience;
     /**
-     * Uno por destino, con EVICCION. Sin esto cada serviceId que alguna vez
-     * recibe trafico es una entrada eterna: con la allowlist creciendo, el
-     * mapa solo crece. 10 min sin uso o mas de 1000 destinos (muy por encima
-     * de lo real) y se evicta; el siguiente request lo recrea. Evictar con
-     * permisos en vuelo es seguro: el Mono en curso retiene su referencia.
+     * One per destination, with EVICTION. Without it, every serviceId that ever
+     * receives traffic is an eternal entry: as the allowlist grows, the map
+     * only grows. 10 min without use or more than 1000 destinations (well
+     * above the real number) and it is evicted; the next request recreates it.
+     * Evicting with permits in flight is safe: the in-flight Mono keeps its
+     * reference.
      */
-    private final Cache<String, Bulkhead> porDestino = Caffeine.newBuilder()
+    private final Cache<String, Bulkhead> byDestination = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(10))
             .maximumSize(1000)
             .build();
 
-    public BulkheadFilter(BulkheadProperties props, ResilienceProperties resiliencia) {
+    public BulkheadFilter(BulkheadProperties props, ResilienceProperties resilience) {
         this.props = props;
-        this.resiliencia = resiliencia;
+        this.resilience = resilience;
     }
 
     @Override
@@ -72,27 +73,28 @@ public class BulkheadFilter implements GlobalFilter, Ordered {
 
         Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
         if (route == null || route.getUri().getHost() == null) {
-            // Sin destino resuelto no hay a que destino limitar. No es motivo
-            // para rechazar: la request todavia puede ser el JWKS o el fallback.
+            // No resolved destination means nothing to limit. That is not a
+            // reason to reject: the request can still be the JWKS or the
+            // fallback.
             return chain.filter(exchange);
         }
-        String destino = route.getUri().getHost().toLowerCase(Locale.ROOT);
+        String destination = route.getUri().getHost().toLowerCase(Locale.ROOT);
 
         return chain.filter(exchange)
-                .transformDeferred(BulkheadOperator.of(bulkheadDe(destino)))
+                .transformDeferred(BulkheadOperator.of(bulkheadFor(destination)))
                 .onErrorResume(BulkheadFullException.class, e -> {
-                    log.warn("BULKHEAD_LLENO destino={} maxConcurrentCalls={}",
-                            destino, props.maxConcurrentCalls());
+                    log.warn("BULKHEAD_FULL destination={} maxConcurrentCalls={}",
+                            destination, props.maxConcurrentCalls());
                     return ProblemDetails.withRetryAfter(exchange, HttpStatus.SERVICE_UNAVAILABLE,
-                            ErrorTypes.SERVICE_UNAVAILABLE, "Servicio no disponible",
-                            "El servicio '" + destino + "' esta saturado. Reintente en unos segundos.",
-                            resiliencia.bulkheadRetryAfter());
+                            ErrorTypes.SERVICE_UNAVAILABLE, "Service unavailable",
+                            "The service '" + destination + "' is saturated. Retry in a few seconds.",
+                            resilience.bulkheadRetryAfter());
                 });
     }
 
-    /** Uno por destino, creado la primera vez que ese destino recibe trafico. */
-    private Bulkhead bulkheadDe(String destino) {
-        return porDestino.get(destino, id -> Bulkhead.of(id, BulkheadConfig.custom()
+    /** One per destination, created the first time that destination receives traffic. */
+    private Bulkhead bulkheadFor(String destination) {
+        return byDestination.get(destination, id -> Bulkhead.of(id, BulkheadConfig.custom()
                 .maxConcurrentCalls(props.maxConcurrentCalls())
                 .maxWaitDuration(props.maxWait() == null ? Duration.ZERO : props.maxWait())
                 .build()));
