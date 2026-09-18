@@ -132,6 +132,7 @@ loader is what does not decode it. The same character in a `.java` is fine.
 
 | Document | Contents |
 |---|---|
+| `docs/GATEWAY-REFERENCE.md` | How it works and every knob — start here if you are integrating a service |
 | `docs/plans/api-gateway.md` | The implementation plan, task by task |
 | `docs/SPEC-api-gateway.md` | The decisions (`DEC-xx`) and the reasoning behind them |
 | `../TASK-ASSIGNMENT.md` | Who owns which files |
