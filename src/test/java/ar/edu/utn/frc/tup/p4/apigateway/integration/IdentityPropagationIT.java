@@ -17,112 +17,112 @@ class IdentityPropagationIT extends AbstractGatewayTest {
 
     @Autowired ReactiveStringRedisTemplate redis;
 
-    private String tokenDe(UUID u) {
+    private String tokenFor(UUID u) {
         seedSession(redis, u, "sid-1");
-        return TokenFactory.persona(u, "sid-1");
+        return TokenFactory.person(u, "sid-1");
     }
 
     @Test
-    void un_header_de_identidad_FALSIFICADO_es_reemplazado_por_el_del_token()
+    void a_FORGED_identity_header_is_replaced_by_the_token_one()
             throws InterruptedException {
         // DoD criterion #10. THE gateway security test: if this one fails,
         // anyone is ADMIN by sending a header.
         UUID real = UUID.randomUUID();
-        UUID atacante = UUID.randomUUID();
+        UUID attacker = UUID.randomUUID();
 
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenDe(real))
-                .header(IdentityHeaders.USER_ID, atacante.toString())
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenFor(real))
+                .header(IdentityHeaders.USER_ID, attacker.toString())
                 .header(IdentityHeaders.USER_ROLES, "ADMIN")
                 .header(IdentityHeaders.PRINCIPAL_TYPE, "service")
                 .exchange().expectStatus().isOk();
 
-        RecordedRequest recibido = ultimoRequestAlDestino();
-        assertThat(recibido.getHeader(IdentityHeaders.USER_ID)).isEqualTo(real.toString());
-        assertThat(recibido.getHeader(IdentityHeaders.USER_ROLES)).isEqualTo("STUDENT");
-        assertThat(recibido.getHeader(IdentityHeaders.PRINCIPAL_TYPE)).isEqualTo("user");
+        RecordedRequest received = lastRequestToDestination();
+        assertThat(received.getHeader(IdentityHeaders.USER_ID)).isEqualTo(real.toString());
+        assertThat(received.getHeader(IdentityHeaders.USER_ROLES)).isEqualTo("STUDENT");
+        assertThat(received.getHeader(IdentityHeaders.PRINCIPAL_TYPE)).isEqualTo("user");
     }
 
     @Test
-    void en_una_ruta_PUBLICA_los_headers_entrantes_se_BORRAN_y_no_se_inyecta_ninguno()
+    void on_a_PUBLIC_route_the_incoming_headers_are_STRIPPED_and_none_is_injected()
             throws InterruptedException {
         // Seeing no X-Principal-Type, the destination knows it is public traffic.
         // If the stripping did not apply on public routes it would be the
         // biggest hole of all: a tokenless route where you declare yourself ADMIN.
-        cliente.post().uri("/api/users/public/auth/login")
+        client.post().uri("/api/users/public/auth/login")
                 .header(IdentityHeaders.USER_ID, UUID.randomUUID().toString())
                 .header(IdentityHeaders.USER_ROLES, "ADMIN")
                 .exchange().expectStatus().isOk();
 
-        RecordedRequest recibido = ultimoRequestAlDestino();
-        assertThat(recibido.getHeader(IdentityHeaders.USER_ID)).isNull();
-        assertThat(recibido.getHeader(IdentityHeaders.USER_ROLES)).isNull();
-        assertThat(recibido.getHeader(IdentityHeaders.PRINCIPAL_TYPE)).isNull();
+        RecordedRequest received = lastRequestToDestination();
+        assertThat(received.getHeader(IdentityHeaders.USER_ID)).isNull();
+        assertThat(received.getHeader(IdentityHeaders.USER_ROLES)).isNull();
+        assertThat(received.getHeader(IdentityHeaders.PRINCIPAL_TYPE)).isNull();
     }
 
     @Test
-    void un_token_de_servicio_inyecta_X_Service_Id_y_X_Service_Scopes()
+    void a_service_token_injects_X_Service_Id_and_X_Service_Scopes()
             throws InterruptedException {
-        cliente.get().uri("/api/users/profile/x")
-                .header("Authorization", "Bearer " + TokenFactory.servicio(
+        client.get().uri("/api/users/profile/x")
+                .header("Authorization", "Bearer " + TokenFactory.service(
                         "cursos-service", "users-service", "users.profile.read"))
                 .exchange().expectStatus().isOk();
 
-        RecordedRequest recibido = ultimoRequestAlDestino();
-        assertThat(recibido.getHeader(IdentityHeaders.PRINCIPAL_TYPE)).isEqualTo("service");
-        assertThat(recibido.getHeader(IdentityHeaders.SERVICE_ID)).isEqualTo("cursos-service");
+        RecordedRequest received = lastRequestToDestination();
+        assertThat(received.getHeader(IdentityHeaders.PRINCIPAL_TYPE)).isEqualTo("service");
+        assertThat(received.getHeader(IdentityHeaders.SERVICE_ID)).isEqualTo("cursos-service");
         // DEC-05: MS first, comma with no space.
-        assertThat(recibido.getHeader(IdentityHeaders.SERVICE_SCOPES))
+        assertThat(received.getHeader(IdentityHeaders.SERVICE_SCOPES))
                 .isEqualTo("MS,users.profile.read");
         // A service token carries no person headers.
-        assertThat(recibido.getHeader(IdentityHeaders.USER_ID)).isNull();
+        assertThat(received.getHeader(IdentityHeaders.USER_ID)).isNull();
     }
 
     /**
-     * DEC-03 sigue vigente, pero solo para el canal que todavia usa header:
-     * un token de servicio. Antes de la spec "Sesion en Cookies" esto se
-     * probaba con un token de persona - ya no aplica, porque un token de
-     * persona por header es justo lo que decision 3 rechaza (ver el test de
-     * mas abajo). Con la cookie fu_at no hay Authorization entrante que
-     * reenviar: no hay nada que verificar ahi, por eso no hay un test que
-     * afirme "llega vacio" - afirmar la ausencia de un header no es una
-     * propiedad interesante del sistema.
+     * DEC-03 is still in force, but only for the channel that still uses a
+     * header: a service token. Before the "Sesion en Cookies" spec this was
+     * tested with a person token - it no longer applies, because a person token
+     * via header is exactly what decision 3 rejects (see the test below). With
+     * the fu_at cookie there is no incoming Authorization to forward: there is
+     * nothing to verify there, which is why there is no test asserting "it
+     * arrives empty" - asserting the absence of a header is not an interesting
+     * property of the system.
      */
     @Test
-    void el_Authorization_original_de_un_token_de_SERVICIO_se_REENVIA_al_destino()
+    void the_original_Authorization_of_a_SERVICE_token_is_FORWARDED_to_the_destination()
             throws InterruptedException {
         // DEC-03: it enables internal zero-trust. It does not relax anti-spoofing:
         // the token is signed, the X-* headers are not.
-        String token = TokenFactory.servicio("cursos-service", "users-service", "users.profile.read");
-        cliente.get().uri("/api/users/profile/x").header("Authorization", "Bearer " + token)
+        String token = TokenFactory.service("cursos-service", "users-service", "users.profile.read");
+        client.get().uri("/api/users/profile/x").header("Authorization", "Bearer " + token)
                 .exchange().expectStatus().isOk();
 
-        assertThat(ultimoRequestAlDestino().getHeader("Authorization")).isEqualTo("Bearer " + token);
+        assertThat(lastRequestToDestination().getHeader("Authorization")).isEqualTo("Bearer " + token);
     }
 
     /**
-     * Decision 3 del spec "Sesion en Cookies" - estado final del cutover:
-     * un token de persona puesto a mano en el header ya no sirve, ni
-     * siquiera si es perfectamente valido. Es el cierre del loophole que
-     * dejaba la migracion a mitad de camino: un token de persona robado
-     * (XSS, log, lo que sea) deja de ser usable por header.
+     * Decision 3 of the "Sesion en Cookies" spec - final state of the cutover:
+     * a person token put by hand into the header no longer works, not even if
+     * it is perfectly valid. It is the closing of the loophole the migration
+     * left half-way: a stolen person token (XSS, log, whatever) stops being
+     * usable via header.
      */
     @Test
-    void un_token_de_PERSONA_por_header_es_rechazado_aunque_sea_valido() {
+    void a_PERSON_token_via_header_is_rejected_even_if_valid() {
         UUID u = UUID.randomUUID();
-        cliente.get().uri("/api/users/me")
-                .header("Authorization", "Bearer " + tokenDe(u))
+        client.get().uri("/api/users/me")
+                .header("Authorization", "Bearer " + tokenFor(u))
                 .exchange().expectStatus().isUnauthorized();
     }
 
     @Test
-    void el_traceparent_llega_al_destino() throws InterruptedException {
+    void the_traceparent_reaches_the_destination() throws InterruptedException {
         String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenDe(UUID.randomUUID()))
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenFor(UUID.randomUUID()))
                 .header("traceparent", traceparent)
                 .exchange().expectStatus().isOk();
 
-        assertThat(ultimoRequestAlDestino().getHeader("traceparent")).isEqualTo(traceparent);
+        assertThat(lastRequestToDestination().getHeader("traceparent")).isEqualTo(traceparent);
     }
 }

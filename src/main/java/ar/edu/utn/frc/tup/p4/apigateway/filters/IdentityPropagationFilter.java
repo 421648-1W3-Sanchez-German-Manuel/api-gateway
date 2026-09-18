@@ -34,7 +34,7 @@ public class IdentityPropagationFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         Jwt jwt = exchange.getAttribute(PrivateRouteGuard.ATTR_JWT);
 
-        ServerWebExchange mutado = exchange.mutate().request(r -> {
+        ServerWebExchange mutated = exchange.mutate().request(r -> {
             // STEP 1 - always strip. Anti-spoofing.
             r.headers(h -> IdentityHeaders.RESERVED.forEach(h::remove));
 
@@ -43,21 +43,22 @@ public class IdentityPropagationFilter implements GlobalFilter, Ordered {
                 return;
             }
 
-            PrincipalContext p = PrincipalContext.from(jwt);
-            r.header(IdentityHeaders.PRINCIPAL_TYPE, p.type().claim());
+            PrincipalContext principal = PrincipalContext.from(jwt);
+            r.header(IdentityHeaders.PRINCIPAL_TYPE, principal.type().claim());
 
-            if (p.type() == PrincipalType.USER) {
-                r.header(IdentityHeaders.USER_ID, p.subject());
-                r.header(IdentityHeaders.USER_ROLES, p.rolesHeader());
+            if (principal.type() == PrincipalType.USER) {
+                r.header(IdentityHeaders.USER_ID, principal.subject());
+                r.header(IdentityHeaders.USER_ROLES, principal.rolesHeader());
             } else {
-                r.header(IdentityHeaders.SERVICE_ID, p.subject());
-                r.header(IdentityHeaders.SERVICE_SCOPES, p.scopesHeader());
+                r.header(IdentityHeaders.SERVICE_ID, principal.subject());
+                r.header(IdentityHeaders.SERVICE_SCOPES, principal.scopesHeader());
                 // DEC-10 - on_behalf_of stays HERE, in the gateway's log.
                 // No X-On-Behalf-Of header is created: users-service does not
                 // parse the JWT (DEC-08), so this log is the ONLY record of it.
-                if (p.onBehalfOf() != null) {
-                    log.info("ON_BEHALF_OF servicio={} actor={} ruta={}",
-                            p.subject(), p.onBehalfOf(), exchange.getRequest().getPath().value());
+                if (principal.onBehalfOf() != null) {
+                    log.info("ON_BEHALF_OF service={} actor={} path={}",
+                            principal.subject(), principal.onBehalfOf(),
+                            exchange.getRequest().getPath().value());
                 }
             }
             // The original Authorization is NOT touched: forwarded as is (DEC-03).
@@ -67,7 +68,7 @@ public class IdentityPropagationFilter implements GlobalFilter, Ordered {
             // populates Authorization on the incoming request in the first place.
         }).build();
 
-        return chain.filter(mutado);
+        return chain.filter(mutated);
     }
 
     @Override

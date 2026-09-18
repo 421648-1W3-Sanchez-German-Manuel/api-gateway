@@ -50,7 +50,7 @@ public class AccountStateGuard implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        if (Boolean.TRUE.equals(exchange.getAttribute(PublicRouteGuard.ATTR_ES_PUBLICA))) {
+        if (Boolean.TRUE.equals(exchange.getAttribute(PublicRouteGuard.ATTR_IS_PUBLIC))) {
             return chain.filter(exchange);
         }
         Jwt jwt = exchange.getAttribute(PrivateRouteGuard.ATTR_JWT);
@@ -59,52 +59,52 @@ public class AccountStateGuard implements GlobalFilter, Ordered {
         }
 
         String est = jwt.getClaimAsString("est");
-        Boolean pwd = PrincipalContext.booleanoDe(jwt, "pwd");
-        Boolean onb = PrincipalContext.booleanoDe(jwt, "onb");
+        Boolean pwd = PrincipalContext.booleanClaim(jwt, "pwd");
+        Boolean onb = PrincipalContext.booleanClaim(jwt, "onb");
 
         // DEC-44: all three are MANDATORY in a person token. Missing means a
         // users-service that does not emit them yet: it is rejected, and the
         // log names which one is missing.
         if (est == null || pwd == null || onb == null) {
-            log.warn("JWT_RECHAZADO reason=claim-ausente claim={} sub={}",
+            log.warn("JWT_REJECTED reason=claim-missing claim={} sub={}",
                     est == null ? "est" : pwd == null ? "pwd" : "onb", jwt.getSubject());
             return ProblemDetails.write(exchange, HttpStatus.UNAUTHORIZED,
-                    ErrorTypes.NOT_AUTHENTICATED, "No autenticado",
-                    "El token no es valido para esta ruta.");
+                    ErrorTypes.NOT_AUTHENTICATED, "Not authenticated",
+                    "The token is not valid for this route.");
         }
 
-        boolean habilitada = "ACTIVE".equals(est) && !pwd && !onb;
-        if (habilitada) {
+        boolean enabled = "ACTIVE".equals(est) && !pwd && !onb;
+        if (enabled) {
             return chain.filter(exchange);
         }
 
         // Not enabled: it can only talk to the exempt prefixes.
         String path = exchange.getRequest().getPath().value();
-        boolean exenta = gate.exemptPrefixes().stream()
-                .anyMatch(prefijo -> MATCHER.match(prefijo, path));
-        if (exenta) {
+        boolean exempt = gate.exemptPrefixes().stream()
+                .anyMatch(prefix -> MATCHER.match(prefix, path));
+        if (exempt) {
             return chain.filter(exchange);
         }
 
         // The SAME types users-service returns from its fine gates, so the
         // frontend has a single handling branch.
         if (!"ACTIVE".equals(est)) {
-            return reject(exchange, ErrorTypes.PENDING_ACCOUNT, "Cuenta pendiente de validacion",
-                    "La cuenta no esta activa.", Map.of("accountStatus", est));
+            return reject(exchange, ErrorTypes.PENDING_ACCOUNT, "Account pending validation",
+                    "The account is not active.", Map.of("accountStatus", est));
         }
         if (pwd) {
             return reject(exchange, ErrorTypes.PASSWORD_CHANGE_REQUIRED,
-                    "Cambio de contrasena requerido",
-                    "Debe cambiar su contrasena antes de continuar.", Map.of());
+                    "Password change required",
+                    "You must change your password before continuing.", Map.of());
         }
-        return reject(exchange, ErrorTypes.ONBOARDING_PENDING, "Onboarding pendiente",
-                "Complete el onboarding antes de continuar.", Map.of());
+        return reject(exchange, ErrorTypes.ONBOARDING_PENDING, "Onboarding pending",
+                "Complete the onboarding before continuing.", Map.of());
     }
 
-    private Mono<Void> reject(ServerWebExchange exchange, URI type, String titulo,
-                              String detalle, Map<String, Object> extras) {
+    private Mono<Void> reject(ServerWebExchange exchange, URI type, String title,
+                              String detail, Map<String, Object> extras) {
         exchange.getAttributes().put(ProblemDetails.ATTR_EXTRAS, extras);
-        return ProblemDetails.write(exchange, HttpStatus.FORBIDDEN, type, titulo, detalle);
+        return ProblemDetails.write(exchange, HttpStatus.FORBIDDEN, type, title, detail);
     }
 
     @Override

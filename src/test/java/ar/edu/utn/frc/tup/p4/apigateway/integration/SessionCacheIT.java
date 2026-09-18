@@ -12,26 +12,26 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Criterio 7g del DoD · DEC-25 - la cache de sesion de 3 segundos.
+ * DoD criterion 7g · DEC-25 - the 3 second session cache.
  *
- * El riesgo que la cache atiende es DISPONIBILIDAD, no carga: sin ella, un hipo
- * de Redis es una caida del Gateway entero. Pero una cache mal acotada convierte
- * ese beneficio en un agujero: seguir contestando 200 con una sesion que ya no
- * existe es exactamente lo que DEC-22 prohibe.
+ * The risk the cache addresses is AVAILABILITY, not load: without it, a Redis
+ * hiccup is a whole Gateway outage. But a poorly bounded cache turns that
+ * benefit into a hole: keeping on answering 200 with a session that no longer
+ * exists is exactly what DEC-22 forbids.
  *
- * Entonces hay dos afirmaciones, y las dos importan:
+ * So there are two claims, and both matter:
  *
- *   1. DENTRO de la ventana, con Redis caido, el request pasa.
- *   2. DESPUES de la ventana, con Redis caido, contesta 503 - nunca 200.
+ *   1. INSIDE the window, with Redis down, the request passes.
+ *   2. AFTER the window, with Redis down, it answers 503 - never 200.
  *
- * Sin la segunda, "cachear" seria "ignorar". Y el 503 tiene que ser 503 y no
- * 401 (DEC-01): decirle "tu sesion vencio" a alguien cuya sesion esta perfecta
- * lo manda a re-loguearse al pedo.
+ * Without the second, "caching" would be "ignoring". And the 503 has to be a
+ * 503 and not a 401 (DEC-01): telling someone whose session is perfectly fine
+ * "your session expired" sends them to log in again for nothing.
  *
- * Se PAUSA el contenedor, no se para. Pararlo lo devuelve en otro puerto y
- * Spring, que cachea el contexto entre clases, sigue apuntando al viejo: los
- * tests pasan de a uno y fallan corridos. Pausado rechaza conexiones igual pero
- * conserva el mapeo.
+ * The container is PAUSED, not stopped. Stopping it brings it back on another
+ * port and Spring, which caches the context between classes, keeps pointing at
+ * the old one: the tests pass one by one and fail when run together. Paused, it
+ * rejects connections just the same but keeps the mapping.
  */
 class SessionCacheIT extends AbstractGatewayTest {
 
@@ -39,30 +39,30 @@ class SessionCacheIT extends AbstractGatewayTest {
 
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS)
-    void con_Redis_caido_pasa_dentro_de_la_ventana_y_da_503_despues() throws Exception {
-        UUID usuario = UUID.randomUUID();
-        seedSession(redis, usuario, "sid-1");
-        String token = TokenFactory.persona(usuario, "sid-1");
+    void with_Redis_down_it_passes_inside_the_window_and_gives_503_afterwards() throws Exception {
+        UUID user = UUID.randomUUID();
+        seedSession(redis, user, "sid-1");
+        String token = TokenFactory.person(user, "sid-1");
 
-        // Primer request con Redis vivo: es el que llena la cache.
-        cliente.get().uri("/api/users/me")
+        // First request with Redis alive: this is the one that fills the cache.
+        client.get().uri("/api/users/me")
                 .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                 .exchange().expectStatus().isOk();
 
         var docker = REDIS.getDockerClient();
         docker.pauseContainerCmd(REDIS.getContainerId()).exec();
         try {
-            // 1) Dentro de los 3s: la cache responde y el request pasa. Esto es
-            //    el valor de DEC-25 - Redis se cayo y el Gateway no.
-            cliente.get().uri("/api/users/me")
+            // 1) Inside the 3s: the cache answers and the request passes. This is
+            //    the value of DEC-25 - Redis went down and the Gateway did not.
+            client.get().uri("/api/users/me")
                     .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                     .exchange().expectStatus().isOk();
 
-            // 2) Pasada la ventana: ya no hay con que verificar, y la respuesta
-            //    tiene que ser 503, nunca 200 con una sesion sin verificar.
+            // 2) Past the window: there is nothing left to verify with, and the
+            //    response has to be 503, never 200 with an unverified session.
             Thread.sleep(3500);
 
-            cliente.get().uri("/api/users/me")
+            client.get().uri("/api/users/me")
                     .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                     .exchange()
                     .expectStatus().isEqualTo(503)
@@ -74,24 +74,24 @@ class SessionCacheIT extends AbstractGatewayTest {
 
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS)
-    void un_logout_se_nota_apenas_expira_la_ventana_y_no_antes() throws Exception {
-        // La contracara: la cache retrasa que se note un logout, y ese retraso
-        // tiene que estar ACOTADO por el TTL. Si no expirara, cerrar sesion no
-        // cerraria nada hasta que el proceso se reinicie.
-        UUID usuario = UUID.randomUUID();
-        seedSession(redis, usuario, "sid-1");
-        String token = TokenFactory.persona(usuario, "sid-1");
+    void a_logout_is_noticed_only_after_the_window_expires_and_not_before() throws Exception {
+        // The flip side: the cache delays a logout from being noticed, and that
+        // delay has to be BOUNDED by the TTL. If it did not expire, logging out
+        // would close nothing until the process restarted.
+        UUID user = UUID.randomUUID();
+        seedSession(redis, user, "sid-1");
+        String token = TokenFactory.person(user, "sid-1");
 
-        cliente.get().uri("/api/users/me")
+        client.get().uri("/api/users/me")
                 .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                 .exchange().expectStatus().isOk();
 
-        // Logout: users-service borra la key. Redis sigue vivo.
-        clearSession(redis, usuario);
+        // Logout: users-service deletes the key. Redis stays alive.
+        clearSession(redis, user);
 
         Thread.sleep(3500);
 
-        cliente.get().uri("/api/users/me")
+        client.get().uri("/api/users/me")
                 .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                 .exchange()
                 .expectStatus().isUnauthorized();

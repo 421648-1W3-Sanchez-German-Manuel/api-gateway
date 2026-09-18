@@ -50,35 +50,35 @@ public class PrincipalRateLimitKeyResolver implements RateLimitKeyResolver {
     }
 
     /**
-     * Comparacion de prefijo real, a nivel de bits: vale para /20, /22, /27,
-     * IPv6 y cualquier mascara, no solo multiplos de 8. La version anterior
-     * comparaba octetos enteros ({@code bits / 8}), asi que el default
-     * {@code 172.16.0.0/12} funcionaba como un /8: cualquier {@code 172.x.x.x}
-     * contaba como proxy de confianza. CIDR o IP malformada -> no es de
-     * confianza (fail-closed: se ignora X-Forwarded-For).
+     * Real prefix comparison, at bit level: it works for /20, /22, /27, IPv6
+     * and any mask, not only multiples of 8. The previous version compared
+     * whole octets ({@code bits / 8}), so the default {@code 172.16.0.0/12}
+     * behaved as a /8: any {@code 172.x.x.x} counted as a trusted proxy.
+     * Malformed CIDR or IP -> not trusted (fail-closed: X-Forwarded-For is
+     * ignored).
      */
     boolean matches(String ip, String cidr) {
         try {
-            String[] partes = cidr.split("/");
-            if (partes.length != 2) {
+            String[] parts = cidr.split("/");
+            if (parts.length != 2) {
                 return false;
             }
-            int bits = Integer.parseInt(partes[1].trim());
-            byte[] red = InetAddress.getByName(partes[0].trim()).getAddress();
-            byte[] dir = InetAddress.getByName(ip.trim()).getAddress();
-            if (red.length != dir.length || bits < 0 || bits > red.length * 8) {
+            int bits = Integer.parseInt(parts[1].trim());
+            byte[] network = InetAddress.getByName(parts[0].trim()).getAddress();
+            byte[] address = InetAddress.getByName(ip.trim()).getAddress();
+            if (network.length != address.length || bits < 0 || bits > network.length * 8) {
                 return false;
             }
-            int completos = bits / 8;
-            for (int i = 0; i < completos; i++) {
-                if (red[i] != dir[i]) {
+            int fullOctets = bits / 8;
+            for (int i = 0; i < fullOctets; i++) {
+                if (network[i] != address[i]) {
                     return false;
                 }
             }
-            int resto = bits % 8;
-            if (resto > 0) {
-                int mask = (0xFF << (8 - resto)) & 0xFF;
-                if (((red[completos] & 0xFF) & mask) != ((dir[completos] & 0xFF) & mask)) {
+            int remainder = bits % 8;
+            if (remainder > 0) {
+                int mask = (0xFF << (8 - remainder)) & 0xFF;
+                if (((network[fullOctets] & 0xFF) & mask) != ((address[fullOctets] & 0xFF) & mask)) {
                     return false;
                 }
             }

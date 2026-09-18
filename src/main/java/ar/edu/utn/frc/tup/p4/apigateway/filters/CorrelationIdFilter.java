@@ -14,7 +14,7 @@ import java.util.HexFormat;
 import java.util.UUID;
 
 /**
- * Paso 2 del pipeline · @Order(10).
+ * Pipeline step 2 · @Order(10).
  *
  * An INCOMING `traceparent` is accepted (W3C Trace Context): if another service
  * started the trace, overwriting it splits the trail in two right at the edge.
@@ -48,31 +48,31 @@ public class CorrelationIdFilter implements GlobalFilter, Ordered {
      * {@code . _ : -}, up to 128 chars: enough for any UUID/trace id, useless
      * for a log-injection payload (no whitespace, no quotes, no newlines).
      */
-    private static final java.util.regex.Pattern REQUEST_ID_VALIDO =
+    private static final java.util.regex.Pattern REQUEST_ID_PATTERN =
             java.util.regex.Pattern.compile("[A-Za-z0-9._:-]{1,128}");
 
     /** Strict W3C Trace Context: version 00, lowercase hex, flags 00/01. */
-    private static final java.util.regex.Pattern TRACEPARENT_VALIDO =
+    private static final java.util.regex.Pattern TRACEPARENT_PATTERN =
             java.util.regex.Pattern.compile("00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]");
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String requestId = validOrGenerated(
                 exchange.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID),
-                REQUEST_ID_VALIDO, () -> UUID.randomUUID().toString());
+                REQUEST_ID_PATTERN, () -> UUID.randomUUID().toString());
         String traceparent = validOrGenerated(
                 exchange.getRequest().getHeaders().getFirst("traceparent"),
-                TRACEPARENT_VALIDO, CorrelationIdFilter::newTraceparent);
+                TRACEPARENT_PATTERN, CorrelationIdFilter::newTraceparent);
 
-        ServerWebExchange mutado = exchange.mutate()
+        ServerWebExchange mutated = exchange.mutate()
                 .request(r -> r.header(IdentityHeaders.REQUEST_ID, requestId)
                                .header("traceparent", traceparent))
                 .build();
 
         // Send it back in the response: it is the id a user can report.
-        mutado.getResponse().getHeaders().set(IdentityHeaders.REQUEST_ID, requestId);
+        mutated.getResponse().getHeaders().set(IdentityHeaders.REQUEST_ID, requestId);
 
-        return chain.filter(mutado)
+        return chain.filter(mutated)
                 .contextWrite(Context.of(
                         CTX_REQUEST_ID, requestId,
                         CTX_TRACE_ID, traceparentTraceId(traceparent),
@@ -81,19 +81,19 @@ public class CorrelationIdFilter implements GlobalFilter, Ordered {
 
     /** W3C Trace Context: `00-{traceId 32 hex}-{spanId 16 hex}-{flags}`. */
     private static String traceparentTraceId(String traceparent) {
-        return parte(traceparent, 1, 32);
+        return part(traceparent, 1, 32);
     }
 
     private static String traceparentSpanId(String traceparent) {
-        return parte(traceparent, 2, 16);
+        return part(traceparent, 2, 16);
     }
 
-    private static String parte(String traceparent, int indice, int largo) {
+    private static String part(String traceparent, int index, int length) {
         if (traceparent == null) return "";
         String[] parts = traceparent.split("-");
         if (parts.length < 3) return "";
-        String p = parts[indice];
-        if (p.length() != largo || !p.matches("[0-9a-fA-F]{" + largo + "}")) return "";
+        String p = parts[index];
+        if (p.length() != length || !p.matches("[0-9a-fA-F]{" + length + "}")) return "";
         return p;
     }
 
@@ -106,17 +106,17 @@ public class CorrelationIdFilter implements GlobalFilter, Ordered {
         return "00-" + hex.formatHex(trace) + "-" + hex.formatHex(span) + "-01";
     }
 
-    private String validOrGenerated(String entrante, java.util.regex.Pattern valido,
-                                        java.util.function.Supplier<String> generador) {
-        if (entrante == null || entrante.isBlank()) {
-            return generador.get();
+    private String validOrGenerated(String incoming, java.util.regex.Pattern pattern,
+                                        java.util.function.Supplier<String> generator) {
+        if (incoming == null || incoming.isBlank()) {
+            return generator.get();
         }
         // Malformed or hostile: regenerate. The value is NOT logged as-is —
         // it would be the injection itself — only its shape is worth knowing.
-        if (!valido.matcher(entrante).matches()) {
-            return generador.get();
+        if (!pattern.matcher(incoming).matches()) {
+            return generator.get();
         }
-        return entrante;
+        return incoming;
     }
 
     @Override public int getOrder() { return 10; }

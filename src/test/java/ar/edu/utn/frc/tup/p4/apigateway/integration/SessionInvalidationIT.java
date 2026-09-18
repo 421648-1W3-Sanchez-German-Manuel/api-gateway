@@ -16,10 +16,10 @@ class SessionInvalidationIT extends AbstractGatewayTest {
     @Autowired ReactiveStringRedisTemplate redis;
 
     /**
-     * SPEC 7 - 500 ms. Sin esto un Redis que no responde cuelga hasta el
-     * default de Lettuce (~60 s), y el WebTestClient corta antes (30 s): el
-     * test de {@code con_Redis_DETENIDO} erroraria en vez de ver el 503. En
-     * produccion vive en {@code application.yml} bajo
+     * SPEC 7 - 500 ms. Without this, a Redis that does not answer hangs until
+     * the Lettuce default (~60 s), and the WebTestClient cuts earlier (30 s):
+     * the {@code with_Redis_PAUSED} test would error out instead of seeing the
+     * 503. In production it lives in {@code application.yml} under
      * {@code spring.data.redis.timeout}.
      */
     @DynamicPropertySource
@@ -28,13 +28,13 @@ class SessionInvalidationIT extends AbstractGatewayTest {
     }
 
     @Test
-    void un_sid_desactualizado_da_401_SESION_SUPERADA() {
+    void an_outdated_sid_gives_401_SESSION_SUPERSEDED() {
         // DoD criterion #7. Valid signature and exp, but another device won.
         UUID u = UUID.randomUUID();
         seedSession(redis, u, "sid-B");
 
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(u, "sid-A"))
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.person(u, "sid-A"))
                 .exchange().expectStatus().isUnauthorized()
                 .expectBody().jsonPath("$.type").value(t ->
                         org.assertj.core.api.Assertions.assertThat((String) t)
@@ -42,13 +42,13 @@ class SessionInvalidationIT extends AbstractGatewayTest {
     }
 
     @Test
-    void la_key_AUSENTE_da_401_SESION_CERRADA_no_503() {
+    void an_ABSENT_key_gives_401_SESSION_CLOSED_not_503() {
         // DEC-01: tell the cause apart. Absent is a logout, not an outage.
         UUID u = UUID.randomUUID();
         clearSession(redis, u);
 
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(u, "sid-A"))
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.person(u, "sid-A"))
                 .exchange().expectStatus().isUnauthorized()
                 .expectBody().jsonPath("$.type").value(t ->
                         org.assertj.core.api.Assertions.assertThat((String) t)
@@ -56,25 +56,26 @@ class SessionInvalidationIT extends AbstractGatewayTest {
     }
 
     @Test
-    void con_Redis_DETENIDO_responde_503_con_Retry_After_nunca_401_ni_200() {
+    void with_Redis_PAUSED_it_answers_503_with_Retry_After_never_401_nor_200() {
         // DoD criterion #7b. It is the difference between "your session expired"
         // (a lie, and the user signs in again for nothing) and "come back later".
         //
-        // Se PAUSA el contenedor en vez de detenerlo: pausado rechaza igual que
-        // caido -que es lo que el test quiere provocar- pero conserva el mapeo
-        // de puertos, asi que al despausar el contexto de Spring sigue sirviendo.
-        // Con stop()/start() el contenedor vuelve en otro puerto y arrastra a
-        // los demas tests de la clase (ver el javadoc de AbstractGatewayTest).
+        // The container is PAUSED instead of stopped: paused it rejects just
+        // like down - which is what the test wants to provoke - but keeps the
+        // port mapping, so on unpause the Spring context keeps serving. With
+        // stop()/start() the container comes back on another port and drags
+        // down the rest of the tests in the class (see AbstractGatewayTest's
+        // javadoc).
         UUID u = UUID.randomUUID();
         seedSession(redis, u, "sid-A");
-        String token = TokenFactory.persona(u, "sid-A");
+        String token = TokenFactory.person(u, "sid-A");
 
         var docker = REDIS.getDockerClient();
         docker.pauseContainerCmd(REDIS.getContainerId()).exec();
         try {
             // Wait for the 3 s cache (DEC-25) to expire before asserting.
             Thread.sleep(3500);
-            cliente.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
+            client.get().uri("/api/users/me").cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, token)
                     .exchange()
                     .expectStatus().isEqualTo(503)
                     .expectHeader().exists("Retry-After");
@@ -86,11 +87,11 @@ class SessionInvalidationIT extends AbstractGatewayTest {
     }
 
     @Test
-    void un_token_de_SERVICIO_no_pasa_por_el_chequeo_de_sesion() {
+    void a_SERVICE_token_does_not_go_through_the_session_check() {
         // Service tokens are 100% stateless: no sid, no Redis.
-        cliente.get().uri("/api/users/profile/x")
+        client.get().uri("/api/users/profile/x")
                 .header("Authorization", "Bearer " +
-                        TokenFactory.servicio("cursos-service", "users-service", "users.profile.read"))
+                        TokenFactory.service("cursos-service", "users-service", "users.profile.read"))
                 .exchange().expectStatus().isOk();
     }
 }

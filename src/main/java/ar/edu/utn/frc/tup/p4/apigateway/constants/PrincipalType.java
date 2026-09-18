@@ -16,10 +16,10 @@ public enum PrincipalType {
     }
 
     /**
-     * Comparacion null-safe contra el claim {@code type}, sin excepciones.
-     * Los guards la usan en vez de comparar strings sueltos: un literal
-     * {@code "User"} o {@code "SERVICE"} escrito a mano nunca matchea y la
-     * rama muere en silencio.
+     * Null-safe comparison against the {@code type} claim, without exceptions.
+     * The guards use it instead of comparing loose strings: a hand-written
+     * literal like {@code "User"} or {@code "SERVICE"} never matches and the
+     * branch dies silently.
      */
     public boolean matches(String value) {
         return claim.equals(value);

@@ -27,15 +27,16 @@ public class ResilienceConfig {
                 .circuitBreakerConfig(CircuitBreakerConfig.custom()
                         .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
                         .slidingWindowSize(props.breakerSlidingWindowSize())
-                        // ~1 s de trafico a 120 usuarios concurrentes con el default
+                        // ~1 s of traffic at 120 concurrent users with the default
                         .failureRateThreshold(props.breakerFailureRateThreshold())
                         .waitDurationInOpenState(props.breakerWaitOpen())
                         .permittedNumberOfCallsInHalfOpenState(props.breakerHalfOpenCalls())
                         .build())
                 .timeLimiterConfig(TimeLimiterConfig.custom()
-                        // MENOR que el timeout del cliente: si el navegador se
-                        // rinde a los 5 s y el gateway a los 10, el usuario ve
-                        // un error generico y el gateway ocupa un hilo en vano.
+                        // SMALLER than the client's timeout: if the browser
+                        // gives up at 5 s and the gateway at 10 s, the user
+                        // sees a generic error and the gateway occupies a
+                        // thread in vain.
                         .timeoutDuration(props.timeLimiterTimeout())
                         .build())
                 .build());

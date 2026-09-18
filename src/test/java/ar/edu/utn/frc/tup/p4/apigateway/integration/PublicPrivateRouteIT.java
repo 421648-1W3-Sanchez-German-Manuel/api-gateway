@@ -14,33 +14,33 @@ class PublicPrivateRouteIT extends AbstractGatewayTest {
     @Autowired ReactiveStringRedisTemplate redis;
 
     /** The private routes go through SessionGuard: the sid has to be in Redis. */
-    private String tokenDe(UUID u) {
+    private String tokenFor(UUID u) {
         seedSession(redis, u, "sid-1");
-        return TokenFactory.persona(u, "sid-1");
+        return TokenFactory.person(u, "sid-1");
     }
 
     @Test
-    void una_ruta_public_pasa_SIN_token() {
-        cliente.post().uri("/api/users/public/auth/login").exchange().expectStatus().isOk();
+    void a_public_route_passes_WITHOUT_a_token() {
+        client.post().uri("/api/users/public/auth/login").exchange().expectStatus().isOk();
     }
 
     @Test
-    void el_mismo_micro_fuera_de_public_SIN_token_da_401() {
-        cliente.get().uri("/api/users/me").exchange().expectStatus().isUnauthorized();
+    void the_same_service_outside_public_WITHOUT_a_token_gives_401() {
+        client.get().uri("/api/users/me").exchange().expectStatus().isUnauthorized();
     }
 
     @Test
-    void el_JWKS_pasa_sin_token_y_LLEGA_AL_DESTINO() {
+    void the_JWKS_passes_without_a_token_and_REACHES_THE_DESTINATION() {
         // DEC-27 - the bug this route had: it passed Security and the three
         // guards and then died on a 404 from the gateway itself, because the
         // dynamic locator generates Path=/api/{name}/**. It needs a static route.
-        cliente.get().uri("/.well-known/jwks.json").exchange().expectStatus().isOk();
+        client.get().uri("/.well-known/jwks.json").exchange().expectStatus().isOk();
     }
 
     @Test
-    void una_ruta_privada_con_token_valido_pasa() {
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenDe(UUID.randomUUID()))
+    void a_private_route_with_a_valid_token_passes() {
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenFor(UUID.randomUUID()))
                 .exchange().expectStatus().isOk();
     }
 }

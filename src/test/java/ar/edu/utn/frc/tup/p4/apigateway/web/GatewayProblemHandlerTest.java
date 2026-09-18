@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GatewayProblemHandlerTest {
 
     private MockServerWebExchange exchange() {
-        return MockServerWebExchange.from(MockServerHttpRequest.get("/api/loquesea"));
+        return MockServerWebExchange.from(MockServerHttpRequest.get("/api/whatever"));
     }
 
     private String bodyOf(MockServerWebExchange ex, ResponseStatusException rse) {
@@ -21,7 +21,7 @@ class GatewayProblemHandlerTest {
     }
 
     @Test
-    void el_404_mapea_a_route_not_found() {
+    void code_404_maps_to_route_not_found() {
         var ex = exchange();
         String body = bodyOf(ex, new ResponseStatusException(HttpStatus.NOT_FOUND));
 
@@ -30,7 +30,7 @@ class GatewayProblemHandlerTest {
     }
 
     @Test
-    void el_405_mapea_a_method_not_allowed() {
+    void code_405_maps_to_method_not_allowed() {
         var ex = exchange();
         String body = bodyOf(ex, new ResponseStatusException(HttpStatus.METHOD_NOT_ALLOWED));
 
@@ -39,7 +39,7 @@ class GatewayProblemHandlerTest {
     }
 
     @Test
-    void el_403_mapea_a_access_denied() {
+    void code_403_maps_to_access_denied() {
         var ex = exchange();
         String body = bodyOf(ex, new ResponseStatusException(HttpStatus.FORBIDDEN));
 
@@ -48,9 +48,9 @@ class GatewayProblemHandlerTest {
     }
 
     @Test
-    void otro_status_sale_con_su_codigo_y_type_generico() {
+    void another_status_goes_out_with_its_code_and_a_generic_type() {
         var ex = exchange();
-        String body = bodyOf(ex, new ResponseStatusException(HttpStatus.BAD_REQUEST, "falta el campo xyz"));
+        String body = bodyOf(ex, new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing field xyz"));
 
         assertThat(ex.getResponse().getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(body).contains("\"status\":400")
@@ -58,15 +58,15 @@ class GatewayProblemHandlerTest {
     }
 
     @Test
-    void el_mensaje_de_la_excepcion_NO_se_copia_al_cuerpo() {
-        // Sanitizacion: el reason puede traer paths internos o datos del
-        // request. El cuerpo lleva mensajes fijos, nada del framework.
+    void the_exception_message_is_NOT_copied_to_the_body() {
+        // Sanitization: the reason can carry internal paths or request data.
+        // The body carries fixed messages, nothing from the framework.
         var ex = exchange();
         String body = bodyOf(ex, new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "secreto-interno-/etc/passwd-' OR '1'='1"));
+                "internal-secret-/etc/passwd-' OR '1'='1"));
 
-        assertThat(body).doesNotContain("secreto-interno")
+        assertThat(body).doesNotContain("internal-secret")
                 .doesNotContain("passwd")
-                .contains("La solicitud no pudo procesarse.");
+                .contains("The request could not be processed.");
     }
 }

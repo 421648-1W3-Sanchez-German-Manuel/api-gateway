@@ -16,89 +16,89 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CorrelationIdFilterTest {
 
-    private final CorrelationIdFilter filtro = new CorrelationIdFilter();
+    private final CorrelationIdFilter filter = new CorrelationIdFilter();
 
     private ServerWebExchange run(MockServerHttpRequest req) {
         var ex = MockServerWebExchange.from(req);
-        AtomicReference<ServerWebExchange> visto = new AtomicReference<>();
-        GatewayFilterChain chain = e -> { visto.set(e); return Mono.empty(); };
-        StepVerifier.create(filtro.filter(ex, chain)).verifyComplete();
-        return visto.get();
+        AtomicReference<ServerWebExchange> seen = new AtomicReference<>();
+        GatewayFilterChain chain = e -> { seen.set(e); return Mono.empty(); };
+        StepVerifier.create(filter.filter(ex, chain)).verifyComplete();
+        return seen.get();
     }
 
-    private ContextView runYCapturaContexto(MockServerHttpRequest req) {
+    private ContextView runAndCaptureContext(MockServerHttpRequest req) {
         var ex = MockServerWebExchange.from(req);
-        AtomicReference<ContextView> contexto = new AtomicReference<>();
+        AtomicReference<ContextView> context = new AtomicReference<>();
         GatewayFilterChain chain = e -> Mono.deferContextual(ctx -> {
-            contexto.set(ctx);
+            context.set(ctx);
             return Mono.empty();
         });
-        StepVerifier.create(filtro.filter(ex, chain)).verifyComplete();
-        return contexto.get();
+        StepVerifier.create(filter.filter(ex, chain)).verifyComplete();
+        return context.get();
     }
 
     @Test
-    void genera_un_X_Request_Id_si_no_viene() {
-        var mutado = run(MockServerHttpRequest.get("/api/users/me").build());
-        assertThat(mutado.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID))
+    void generates_an_X_Request_Id_when_missing() {
+        var mutated = run(MockServerHttpRequest.get("/api/users/me").build());
+        assertThat(mutated.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID))
                 .isNotBlank();
     }
 
     @Test
-    void CONSERVA_el_traceparent_entrante() {
+    void PRESERVES_the_incoming_traceparent() {
         // W3C Trace Context: if another service already started the trace, we
         // do not overwrite it - that splits the trail in two right at the edge.
         String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-        var mutado = run(MockServerHttpRequest.get("/api/users/me")
+        var mutated = run(MockServerHttpRequest.get("/api/users/me")
                 .header("traceparent", traceparent).build());
 
-        assertThat(mutado.getRequest().getHeaders().getFirst("traceparent")).isEqualTo(traceparent);
+        assertThat(mutated.getRequest().getHeaders().getFirst("traceparent")).isEqualTo(traceparent);
     }
 
     @Test
-    void un_X_Request_Id_con_salto_de_linea_se_REGENERA_no_se_propaga() {
+    void an_X_Request_Id_with_a_newline_is_REGENERATED_not_propagated() {
         // Log-line injection: the id ends up verbatim in the MDC and in the
         // response header. Anything outside the allowlist is discarded.
-        var mutado = run(MockServerHttpRequest.get("/api/users/me")
-                .header(IdentityHeaders.REQUEST_ID, "abc\nfalso INFO LINEA-INYECTADA").build());
+        var mutated = run(MockServerHttpRequest.get("/api/users/me")
+                .header(IdentityHeaders.REQUEST_ID, "abc\nfake LINE-INJECTED").build());
 
-        String propagado = mutado.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID);
-        assertThat(propagado).doesNotContain("\n").doesNotContain("INYECTADA");
+        String propagated = mutated.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID);
+        assertThat(propagated).doesNotContain("\n").doesNotContain("INJECTED");
     }
 
     @Test
-    void un_X_Request_Id_gigante_se_REGENERA() {
-        var mutado = run(MockServerHttpRequest.get("/api/users/me")
+    void a_giant_X_Request_Id_is_REGENERATED() {
+        var mutated = run(MockServerHttpRequest.get("/api/users/me")
                 .header(IdentityHeaders.REQUEST_ID, "a".repeat(4096)).build());
 
-        assertThat(mutado.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID))
+        assertThat(mutated.getRequest().getHeaders().getFirst(IdentityHeaders.REQUEST_ID))
                 .hasSizeLessThanOrEqualTo(128);
     }
 
     @Test
-    void un_traceparent_malformado_se_REGENERA() {
-        var mutado = run(MockServerHttpRequest.get("/api/users/me")
+    void a_malformed_traceparent_is_REGENERATED() {
+        var mutated = run(MockServerHttpRequest.get("/api/users/me")
                 .header("traceparent", "no-es-un-traceparent").build());
 
-        assertThat(mutado.getRequest().getHeaders().getFirst("traceparent"))
+        assertThat(mutated.getRequest().getHeaders().getFirst("traceparent"))
                 .matches("00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]");
     }
 
     @Test
-    void un_traceparent_con_version_futura_se_REGENERA() {
+    void a_traceparent_with_a_future_version_is_REGENERATED() {
         // Only version 00 is parsed downstream (traceId/spanId by position).
         // Accepting an unknown version preserves a trail we cannot read.
-        var mutado = run(MockServerHttpRequest.get("/api/users/me")
+        var mutated = run(MockServerHttpRequest.get("/api/users/me")
                 .header("traceparent", "cc-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01").build());
 
-        assertThat(mutado.getRequest().getHeaders().getFirst("traceparent"))
+        assertThat(mutated.getRequest().getHeaders().getFirst("traceparent"))
                 .startsWith("00-");
     }
 
     @Test
-    void publica_el_traceId_y_el_spanId_del_traceparent_en_el_contexto() {
+    void publishes_the_traceId_and_spanId_of_the_traceparent_in_the_context() {
         String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-        ContextView ctx = runYCapturaContexto(MockServerHttpRequest.get("/api/users/me")
+        ContextView ctx = runAndCaptureContext(MockServerHttpRequest.get("/api/users/me")
                 .header("traceparent", traceparent).build());
 
         assertThat(ctx.<String>get(CorrelationIdFilter.CTX_TRACE_ID))
@@ -108,33 +108,33 @@ class CorrelationIdFilterTest {
     }
 
     @Test
-    void sin_traceparent_genera_un_traceId_y_spanId_validos_en_el_contexto() {
-        ContextView ctx = runYCapturaContexto(MockServerHttpRequest.get("/api/users/me").build());
+    void without_a_traceparent_it_generates_valid_traceId_and_spanId_in_the_context() {
+        ContextView ctx = runAndCaptureContext(MockServerHttpRequest.get("/api/users/me").build());
 
         assertThat(ctx.<String>get(CorrelationIdFilter.CTX_TRACE_ID)).matches("[0-9a-f]{32}");
         assertThat(ctx.<String>get(CorrelationIdFilter.CTX_SPAN_ID)).matches("[0-9a-f]{16}");
     }
 
     @Test
-    void genera_un_traceparent_si_no_viene() {
-        var mutado = run(MockServerHttpRequest.get("/api/users/me").build());
-        assertThat(mutado.getRequest().getHeaders().getFirst("traceparent"))
+    void generates_a_traceparent_when_missing() {
+        var mutated = run(MockServerHttpRequest.get("/api/users/me").build());
+        assertThat(mutated.getRequest().getHeaders().getFirst("traceparent"))
                 .matches("00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]");
     }
 
     @Test
-    void el_X_Request_Id_tambien_sale_en_la_RESPUESTA() {
+    void the_X_Request_Id_also_goes_out_in_the_RESPONSE() {
         // Without this, a user reporting an error has no id to hand over.
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me").build());
-        StepVerifier.create(filtro.filter(ex, e -> Mono.empty())).verifyComplete();
+        StepVerifier.create(filter.filter(ex, e -> Mono.empty())).verifyComplete();
         assertThat(ex.getResponse().getHeaders().getFirst(IdentityHeaders.REQUEST_ID)).isNotBlank();
     }
 
     @Test
-    void es_el_primer_filtro() {
+    void it_is_the_first_filter() {
         // The @Order values go in steps of 10 on purpose: it leaves room to
         // slot in PipelineOrderIT's spy filters (task 13) without touching
         // the relative order of the real ones.
-        assertThat(filtro.getOrder()).isEqualTo(10);
+        assertThat(filter.getOrder()).isEqualTo(10);
     }
 }

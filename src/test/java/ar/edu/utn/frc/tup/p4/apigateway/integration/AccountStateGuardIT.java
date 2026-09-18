@@ -21,14 +21,14 @@ class AccountStateGuardIT extends AbstractGatewayTest {
 
     private String tokenWithStatus(UUID u, String est, boolean pwd, boolean onb) {
         seedSession(redis, u, "sid-1");
-        return TokenFactory.persona(u, "sid-1",
+        return TokenFactory.person(u, "sid-1",
                 b -> b.claim("est", est).claim("pwd", pwd).claim("onb", onb));
     }
 
     @Test
-    void onboarding_pendiente_recibe_403_en_una_ruta_de_OTRO_micro() {
+    void pending_onboarding_gets_403_on_a_route_of_ANOTHER_service() {
         UUID u = UUID.randomUUID();
-        cliente.get().uri("/api/cursos/mis-cursos")
+        client.get().uri("/api/cursos/mis-cursos")
                 .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "ACTIVE", false, true))
                 .exchange().expectStatus().isForbidden()
                 .expectBody().jsonPath("$.type").value(t ->
@@ -37,29 +37,29 @@ class AccountStateGuardIT extends AbstractGatewayTest {
     }
 
     @Test
-    void la_MISMA_cuenta_pasa_en_una_ruta_de_users_service() {
+    void the_SAME_account_passes_on_a_users_service_route() {
         // The whole rule: if the account is not enabled, ONLY /api/users/** and
         // /api/*/public/** are allowed. The FINE gate (per route, with its
         // exemptions) is users-service's; the gateway applies the coarse one.
         UUID u = UUID.randomUUID();
-        cliente.get().uri("/api/users/me")
+        client.get().uri("/api/users/me")
                 .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "ACTIVE", false, true))
                 .exchange().expectStatus().isOk();
     }
 
     @Test
-    void una_cuenta_PENDIENTE_CURSO_recibe_403_con_el_estado_en_el_cuerpo() {
+    void a_PENDING_COURSE_account_gets_403_with_the_state_in_the_body() {
         UUID u = UUID.randomUUID();
-        cliente.get().uri("/api/cursos/mis-cursos")
+        client.get().uri("/api/cursos/mis-cursos")
                 .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "PENDING_COURSE", false, false))
                 .exchange().expectStatus().isForbidden()
                 .expectBody().jsonPath("$.accountStatus").isEqualTo("PENDING_COURSE");
     }
 
     @Test
-    void debe_cambiar_password_recibe_403_con_su_propio_type() {
+    void password_change_required_gets_403_with_its_own_type() {
         UUID u = UUID.randomUUID();
-        cliente.get().uri("/api/cursos/mis-cursos")
+        client.get().uri("/api/cursos/mis-cursos")
                 .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "ACTIVE", true, false))
                 .exchange().expectStatus().isForbidden()
                 .expectBody().jsonPath("$.type").value(t ->
@@ -68,33 +68,33 @@ class AccountStateGuardIT extends AbstractGatewayTest {
     }
 
     @Test
-    void una_cuenta_habilitada_pasa_a_cualquier_micro() {
+    void an_enabled_account_passes_to_any_service() {
         UUID u = UUID.randomUUID();
-        cliente.get().uri("/api/users/me")
+        client.get().uri("/api/users/me")
                 .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, tokenWithStatus(u, "ACTIVE", false, false))
                 .exchange().expectStatus().isOk();
     }
 
     @Test
-    void un_token_de_persona_SIN_los_claims_es_rechazado_y_el_log_los_nombra() {
+    void a_person_token_WITHOUT_the_claims_is_rejected_and_the_log_names_them() {
         // DEC-44 - DoD criterion #7d. This is the "old users-service against a
         // new gateway" case, which now fails legibly.
         UUID u = UUID.randomUUID();
         seedSession(redis, u, "sid-1");
-        String sinClaims = TokenFactory.persona(u, "sid-1",
+        String noClaims = TokenFactory.person(u, "sid-1",
                 b -> b.claim("est", null).claim("pwd", null).claim("onb", null));
 
-        cliente.get().uri("/api/cursos/mis-cursos")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, sinClaims)
+        client.get().uri("/api/cursos/mis-cursos")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, noClaims)
                 .exchange().expectStatus().isUnauthorized();
     }
 
     @Test
-    void un_token_de_SERVICIO_no_atraviesa_este_filtro() {
+    void a_SERVICE_token_does_not_go_through_this_filter() {
         // An MS does not stand for a person with an account: no status to check.
-        cliente.get().uri("/api/users/profile/x")
+        client.get().uri("/api/users/profile/x")
                 .header("Authorization", "Bearer " +
-                        TokenFactory.servicio("cursos-service", "users-service", "users.profile.read"))
+                        TokenFactory.service("cursos-service", "users-service", "users.profile.read"))
                 .exchange().expectStatus().isOk();
     }
 }

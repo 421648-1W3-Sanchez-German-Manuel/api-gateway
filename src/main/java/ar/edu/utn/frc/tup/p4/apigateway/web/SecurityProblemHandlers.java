@@ -6,15 +6,15 @@ import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
 import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
 
 /**
- * Las DOS formas en que la cadena de Security corta un request, en un solo
- * lugar y con el mismo contrato RFC 9457 del resto del pipeline.
+ * The TWO ways the Security chain cuts a request, in one single place and
+ * with the same RFC 9457 contract as the rest of the pipeline.
  *
  * <ul>
- *   <li>Sin token o token invalido (firma, {@code exp}, {@code iss}) ->
- *       401 {@code not-authenticated}. El cuerpo NO nombra el claim que
- *       falto: eso va solo al log (DEC-44).</li>
- *   <li>Autenticado pero sin acceso -> 403 {@code access-denied}, con mensaje
- *       fijo y sanitizado.</li>
+ *   <li>No token or invalid token (signature, {@code exp}, {@code iss}) ->
+ *       401 {@code not-authenticated}. The body does NOT name the claim that
+ *       failed: that goes only to the log (DEC-44).</li>
+ *   <li>Authenticated but no access -> 403 {@code access-denied}, with a
+ *       fixed, sanitized message.</li>
  * </ul>
  */
 public final class SecurityProblemHandlers {
@@ -23,14 +23,14 @@ public final class SecurityProblemHandlers {
     }
 
     public static ServerAuthenticationEntryPoint authenticationEntryPoint() {
-        return (exchange, denegado) -> ProblemDetails.write(exchange, HttpStatus.UNAUTHORIZED,
-                ErrorTypes.NOT_AUTHENTICATED, "No autenticado",
-                "El token no es valido o esta ausente.");
+        return (exchange, denied) -> ProblemDetails.write(exchange, HttpStatus.UNAUTHORIZED,
+                ErrorTypes.NOT_AUTHENTICATED, "Not authenticated",
+                "The token is invalid or absent.");
     }
 
     public static ServerAccessDeniedHandler accessDeniedHandler() {
-        return (exchange, denegado) -> ProblemDetails.write(exchange, HttpStatus.FORBIDDEN,
-                ErrorTypes.ACCESS_DENIED, "Acceso denegado",
-                "No tiene permiso para acceder a este recurso.");
+        return (exchange, denied) -> ProblemDetails.write(exchange, HttpStatus.FORBIDDEN,
+                ErrorTypes.ACCESS_DENIED, "Access denied",
+                "You do not have permission to access this resource.");
     }
 }

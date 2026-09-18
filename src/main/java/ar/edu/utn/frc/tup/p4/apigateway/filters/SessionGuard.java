@@ -18,30 +18,31 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 
 /**
- * Verifica la sesion unica DESPUES de que Security valido firma, exp e iss, y
- * ANTES de que el request se rutee.
+ * Verifies the single session AFTER Security validated signature, exp and iss,
+ * and BEFORE the request is routed.
  *
- * Es un WebFilter y no un OAuth2TokenValidator por el motivo que explica
- * `SessionValidator`: la interfaz del validator es sincronica y leer Redis no.
+ * It is a WebFilter and not an OAuth2TokenValidator for the reason explained in
+ * {@code SessionValidator}: the validator interface is synchronous and reading
+ * Redis is not.
  */
 @Component
 public class SessionGuard implements WebFilter, Ordered {
 
-    private final SessionValidator validador;
+    private final SessionValidator validator;
 
-    public SessionGuard(SessionValidator validador) { this.validador = validador; }
+    public SessionGuard(SessionValidator validator) { this.validator = validator; }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        // Igual que PrivateRouteGuard/AccountStateGuard: una ruta publica no
-        // necesita sesion vigente, es la que la CREA o la ROTA (login, 2fa,
-        // refresh). Sin este salteo, una cookie fu_at vieja -de una sesion ya
-        // superada- que el navegador adjunta solo porque comparte origen
-        // (no por eleccion del frontend, como pasaba con el header) rechaza
-        // el intento de login NUEVO por la sesion VIEJA. Antes de las cookies
-        // esto nunca se disparaba: el interceptor jamas mandaba el header
-        // Authorization a una ruta publica.
-        if (Boolean.TRUE.equals(exchange.getAttribute(PublicRouteGuard.ATTR_ES_PUBLICA))) {
+        // Same as PrivateRouteGuard/AccountStateGuard: a public route does not
+        // need a current session, it is the one that CREATES or ROTATES it
+        // (login, 2fa, refresh). Without this skip, a stale fu_at cookie -from
+        // an already superseded session- that the browser attaches only because
+        // it shares the origin (not by the frontend's choice, as used to happen
+        // with the header) rejects the NEW login attempt because of the OLD
+        // session. Before cookies this never fired: the interceptor never sent
+        // the Authorization header to a public route.
+        if (Boolean.TRUE.equals(exchange.getAttribute(PublicRouteGuard.ATTR_IS_PUBLIC))) {
             return chain.filter(exchange);
         }
 
@@ -51,30 +52,30 @@ public class SessionGuard implements WebFilter, Ordered {
                 .map(Authentication::getPrincipal)
                 .filter(Jwt.class::isInstance)
                 .map(Jwt.class::cast)
-                .flatMap(validador::verificar)
-                // El defaultIfEmpty va ACA, sobre el Resultado, y NO como un
-                // switchIfEmpty al final de la cadena. Los metodos de
-                // ProblemDetails devuelven Mono<Void>, que SIEMPRE completa
-                // vacio: un switchIfEmpty despues de ellos se dispara aunque ya
-                // se haya escrito el 401, y el request rechazado sigue viaje al
-                // destino. El cliente ve 401 y el backend recibe el request
-                // igual. Es el mismo error que en PrivateRouteGuard.
+                .flatMap(validator::verify)
+                // The defaultIfEmpty goes HERE, on the Decision, and NOT as a
+                // switchIfEmpty at the end of the chain. ProblemDetails methods
+                // return Mono<Void>, which ALWAYS completes empty: a
+                // switchIfEmpty after them fires even when the 401 was already
+                // written, and the rejected request keeps travelling to its
+                // destination. The client sees 401 and the backend receives the
+                // request anyway. It is the same bug as in PrivateRouteGuard.
                 //
-                // Sin Authentication -- ruta publica -- el guard no aplica.
-                .defaultIfEmpty(SessionValidator.Resultado.VIGENTE)
-                .flatMap(resultado -> switch (resultado) {
-                    case VIGENTE -> chain.filter(exchange);
-                    case SUPERADA -> ProblemDetails.write(exchange,
+                // No Authentication -- public route -- the guard does not apply.
+                .defaultIfEmpty(SessionValidator.Decision.VALID)
+                .flatMap(decision -> switch (decision) {
+                    case VALID -> chain.filter(exchange);
+                    case SUPERSEDED -> ProblemDetails.write(exchange,
                             HttpStatus.UNAUTHORIZED, ErrorTypes.SESSION_SUPERSEDED,
                             "Session superseded",
                             "Another device signed in with this account.");
-                    case CERRADA -> ProblemDetails.write(exchange,
+                    case CLOSED -> ProblemDetails.write(exchange,
                             HttpStatus.UNAUTHORIZED, ErrorTypes.SESSION_CLOSED,
                             "Session closed",
                             "The session is no longer active. Sign in again.");
-                    // DEC-01: fail-closed, pero 503 y no 401. Reintentar SI
-                    // sirve aca, a diferencia de una sesion cerrada.
-                    case NO_VERIFICABLE -> ProblemDetails.withRetryAfter(exchange,
+                    // DEC-01: fail-closed, but 503 and not 401. Retrying DOES
+                    // help here, unlike an closed session.
+                    case UNVERIFIABLE -> ProblemDetails.withRetryAfter(exchange,
                             HttpStatus.SERVICE_UNAVAILABLE, ErrorTypes.SERVICE_UNAVAILABLE,
                             "Could not verify the session",
                             "Try again in a few seconds.", Duration.ofSeconds(5));
@@ -82,13 +83,13 @@ public class SessionGuard implements WebFilter, Ordered {
     }
 
     /**
-     * Despues de la cadena de autenticacion: necesita el Jwt ya validado en el
-     * SecurityContext. La cadena de Security corre en -100
-     * (SecurityWebFiltersOrder), asi que cualquier valor mayor sirve; 0 deja
-     * margen por si hace falta intercalar algo antes.
+     * After the authentication chain: it needs the already-validated Jwt in the
+     * SecurityContext. Security's chain runs at -100
+     * (SecurityWebFiltersOrder), so any higher value works; 0 leaves room if
+     * something needs to be interleaved before it.
      *
-     * Ojo: este es el orden de los WebFilter, que es OTRO orden que el de los
-     * GlobalFilter del pipeline de ruteo (@Order(1) a @Order(8)).
+     * Note: this is the WebFilter ordering, which is a DIFFERENT ordering from
+     * the GlobalFilter pipeline of routing (@Order(1) to @Order(8)).
      */
     @Override
     public int getOrder() { return 0; }

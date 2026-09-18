@@ -17,18 +17,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * G3 - ruteo dinamico gobernado por la allowlist tipada. Cubre:
- *  - R7 · el path NO se reescribe (DoD #2);
- *  - DoD #3 · un servicio FUERA de la allowlist no es accesible;
- *  - la derivacion serviceId &lt;-&gt; segmento de path que la spec fija;
- *  - la validacion de arranque que rechaza la allowlist si incluye infra.
+ * G3 - dynamic routing governed by the typed allowlist. It covers:
+ *  - R7 · the path is NOT rewritten (DoD #2);
+ *  - DoD #3 · a service OUTSIDE the allowlist is not reachable;
+ *  - the serviceId &lt;-&gt; path segment derivation the spec sets;
+ *  - the startup validation that rejects the allowlist if it includes infra.
  *
- * <p>Sin {@code AllowlistRouteLocator} las rutas se generaban via el
- * {@code include-expression} del DiscoveryClient locator, y la SpEL
- * {@code serviceId.toLowerCase()} reventaba en el listener de refresco, NO
- * en el arranque: el Gateway levantaba sano, con la tabla vacia, y daba 404
- * a todo. Estos tests documentan el contrato que la nueva generacion de
- * rutas debe cumplir.
+ * <p>Without {@code AllowlistRouteLocator} the routes were generated via the
+ * DiscoveryClient locator's {@code include-expression}, and the SpEL
+ * {@code serviceId.toLowerCase()} blew up in the refresh listener, NOT at
+ * startup: the Gateway came up healthy, with an empty table, and answered 404
+ * to everything. These tests document the contract the new route generation
+ * must fulfil.
  */
 class DiscoveryAllowlistIT extends AbstractGatewayTest {
 
@@ -36,40 +36,42 @@ class DiscoveryAllowlistIT extends AbstractGatewayTest {
     ReactiveStringRedisTemplate redis;
 
     @Test
-    void el_path_llega_AL_DESTINO_SIN_REESCRIBIR() throws Exception {
-        // R7 - DoD #2. El destino recibe /api/users/me, no /me.
-        // Si alguien agrega un RewritePath "para limpiar el prefijo", este
-        // test lo caza: los controllers del destino estan mapeados CON prefijo.
+    void the_path_reaches_the_DESTINATION_WITHOUT_BEING_REWRITTEN() throws Exception {
+        // R7 - DoD #2. The destination receives /api/users/me, not /me.
+        // If someone adds a RewritePath "to clean up the prefix", this test
+        // catches it: the destination controllers are mapped WITH the prefix.
         UUID sub = UUID.randomUUID();
-        // La sesion tiene que estar sembrada, y con el MISMO sid que el token:
-        // SessionGuard corre como WebFilter ANTES del ruteo, asi que un token de
-        // persona sin sesion vigente se corta con 401 y el destino no recibe
-        // nada. Sin esto el assert de abajo espera un request que nunca llega.
+        // The session has to be seeded, and with the SAME sid as the token:
+        // SessionGuard runs as a WebFilter BEFORE routing, so a person token
+        // without a live session is cut with 401 and the destination receives
+        // nothing. Without this the assert below waits for a request that never
+        // arrives.
         seedSession(redis, sub, "sid-1");
-        cliente.get().uri("/api/users/me")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(sub, "sid-1"))
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.person(sub, "sid-1"))
                 .exchange();
 
-        RecordedRequest recibido = ultimoRequestAlDestino();
-        assertThat(recibido.getPath()).isEqualTo("/api/users/me");
+        RecordedRequest received = lastRequestToDestination();
+        assertThat(received.getPath()).isEqualTo("/api/users/me");
     }
 
     @Test
-    void un_servicio_FUERA_de_la_allowlist_responde_404() {
-        // DoD #3. Registrarse en Eureka NO expone un servicio: hasta que no
-        // esta en la allowlist tipada, no existe para el exterior.
-        // Mismo motivo: sin sesion sembrada esto daria 401 y no 404, y el test
-        // pasaria a probar el guard de sesion en vez de la allowlist.
+    void a_service_OUTSIDE_the_allowlist_answers_404() {
+        // DoD #3. Registering in Eureka does NOT expose a service: until it is
+        // in the typed allowlist, it does not exist to the outside.
+        // Same reason: without a seeded session this would give 401 and not
+        // 404, and the test would end up testing the session guard instead of
+        // the allowlist.
         UUID sub = UUID.randomUUID();
         seedSession(redis, sub, "s");
-        cliente.get().uri("/api/otro/lo-que-sea")
-                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.persona(sub, "s"))
+        client.get().uri("/api/otro/lo-que-sea")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.person(sub, "s"))
                 .exchange()
                 .expectStatus().isNotFound();
     }
 
     @Test
-    void la_derivacion_de_serviceId_a_segmento_es_la_de_la_spec() {
+    void the_serviceId_to_segment_derivation_is_the_one_from_the_spec() {
         var props = new GatewayRoutingProperties(List.of("users-service"), "-service", "/api");
         assertThat(props.serviceIdToPathSegment("users-service")).isEqualTo("users");
         assertThat(props.serviceIdToPathSegment("USERS-SERVICE")).isEqualTo("users");
@@ -77,9 +79,9 @@ class DiscoveryAllowlistIT extends AbstractGatewayTest {
     }
 
     @Test
-    void el_arranque_FALLA_si_la_allowlist_incluye_al_propio_gateway() {
-        // Rutearse a si mismo produce un bucle infinito que aparece como stack
-        // overflow o timeout, nunca como un error legible.
+    void startup_FAILS_if_the_allowlist_includes_the_gateway_itself() {
+        // Routing to itself produces an infinite loop that shows up as a stack
+        // overflow or a timeout, never as a readable error.
         var props = new GatewayRoutingProperties(
                 List.of("users-service", "api-gateway"), "-service", "/api");
         assertThatThrownBy(() -> new DiscoveryLocatorConfig(props).validateAllowlist())
@@ -88,7 +90,7 @@ class DiscoveryAllowlistIT extends AbstractGatewayTest {
     }
 
     @Test
-    void el_arranque_FALLA_si_la_allowlist_incluye_a_eureka() {
+    void startup_FAILS_if_the_allowlist_includes_eureka() {
         var props = new GatewayRoutingProperties(
                 List.of("users-service", "eureka-server"), "-service", "/api");
         assertThatThrownBy(() -> new DiscoveryLocatorConfig(props).validateAllowlist())

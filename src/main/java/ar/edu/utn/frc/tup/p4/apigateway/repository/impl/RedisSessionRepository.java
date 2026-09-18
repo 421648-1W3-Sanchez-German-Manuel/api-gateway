@@ -6,17 +6,18 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Mono;
 
 /**
- * La UNICA lectura que el Gateway hace contra Redis. Nunca escribe, nunca
- * borra: {@code session:{userId}} lo escribe el login de users-service y lo
- * borra su logout y su desactivacion (DEC-22).
+ * The ONLY read the Gateway does against Redis. It never writes, never deletes:
+ * {@code session:{userId}} is written by users-service's login and deleted by
+ * its logout and its deactivation (DEC-22).
  *
- * <p>DEC-01 - fail-closed distinguiendo causa:
+ * <p>DEC-01 - fail-closed, telling the two causes apart:
  * <ul>
- *   <li>key presente -> {@link SessionState.Active}.</li>
- *   <li>key ausente -> {@link SessionState.Absent}.</li>
- *   <li>error de Redis -> {@link SessionState.Unavailable}, NO {@code Absent}.
- *       Confundirlos es fail-open disfrazado de fail-closed: alguien con sesion
- *       perfectamente valida seria deslogueado solo porque Redis se cayo.</li>
+ *   <li>key present -> {@link SessionState.Active}.</li>
+ *   <li>key absent -> {@link SessionState.Absent}.</li>
+ *   <li>Redis error -> {@link SessionState.Unavailable}, NOT {@code Absent}.
+ *       Confusing them is fail-open disguised as fail-closed: someone with a
+ *       perfectly valid session would be logged out only because Redis went
+ *       down.</li>
  * </ul>
  */
 @Repository

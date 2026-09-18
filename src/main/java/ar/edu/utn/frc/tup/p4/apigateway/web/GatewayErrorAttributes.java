@@ -11,10 +11,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Puente entre los atributos de error que Spring Boot acumula y el cuerpo
- * RFC 9457 que {@link ProblemDetails} ya escribe. Mantiene la trazabilidad
- * del requestId dentro del cuerpo problem+json sin que cada filtro tenga
- * que recordar copiarlo.
+ * Bridge between the error attributes Spring Boot accumulates and the
+ * RFC 9457 body that {@link ProblemDetails} already writes. It keeps the
+ * requestId traceable inside the problem+json body without each filter having
+ * to remember to copy it.
  */
 @Component
 public class GatewayErrorAttributes implements ErrorAttributes {

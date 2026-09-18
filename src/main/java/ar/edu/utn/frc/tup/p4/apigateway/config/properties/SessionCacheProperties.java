@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 
-/** DEC-25 - cache local de session:{userId}. TTL corto a proposito. */
+/** DEC-25 - local cache of session:{userId}. Short TTL on purpose. */
 @ConfigurationProperties(prefix = "gateway.session-cache")
 public record SessionCacheProperties(Duration ttl, long maxSize) {
 }

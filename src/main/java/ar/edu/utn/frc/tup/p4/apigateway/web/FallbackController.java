@@ -16,32 +16,33 @@ import reactor.core.publisher.Mono;
 import java.util.Locale;
 
 /**
- * Destino del circuit breaker: 503 con la MISMA forma que el resto de los
- * errores. Si este controller respondiera otra cosa, el cliente tendria una
- * rama de manejo por filtro: imposible de mantener.
+ * Circuit breaker destination: 503 with the SAME shape as the rest of the
+ * errors. If this controller answered something else, the client would have
+ * one handling branch per filter: impossible to maintain.
  *
- * <p>El path {@code /fallback/{serviceId}} sale del {@code fallbackUri} del
- * filtro CircuitBreaker, que es un literal compartido por todas las rutas
- * ({@code forward:/fallback/servicio}). O sea que el {@code serviceId} del path
- * NO es el destino: es la palabra "servicio". El destino real se saca de la
- * ruta resuelta, que sigue en los atributos del exchange despues del forward.
+ * <p>The {@code /fallback/{serviceId}} path comes from the CircuitBreaker
+ * filter's {@code fallbackUri}, a literal shared by all routes
+ * ({@code forward:/fallback/servicio}). That is, the {@code serviceId} in the
+ * path is NOT the destination: it is the word "servicio". The real destination
+ * is taken from the resolved route, which stays in the exchange attributes
+ * after the forward.
  */
 @RestController
 public class FallbackController {
 
-    private final ResilienceProperties resiliencia;
+    private final ResilienceProperties resilience;
 
-    public FallbackController(ResilienceProperties resiliencia) {
-        this.resiliencia = resiliencia;
+    public FallbackController(ResilienceProperties resilience) {
+        this.resilience = resilience;
     }
 
     /**
-     * Aparece SIETE veces en el spec, una por verbo, y esta bien asi: el
-     * {@code @RequestMapping} no declara {@code method} porque el forward del
-     * breaker conserva el metodo original, asi que cualquier verbo puede caer
-     * aca. Agregarle {@code method = GET} para "limpiar la documentacion"
-     * romperia el fallback de todo POST, PATCH y DELETE — la doc se veria mejor
-     * y el breaker dejaria de contestar en la mitad de los casos.
+     * It appears SEVEN times in the spec, one per verb, and that is fine:
+     * {@code @RequestMapping} does not declare {@code method} because the
+     * breaker's forward preserves the original method, so any verb can land
+     * here. Adding {@code method = GET} to "clean up the documentation" would
+     * break the fallback of every POST, PATCH and DELETE — the docs would look
+     * better and the breaker would stop answering in half the cases.
      */
     @Operation(summary = "INTERNO - destino del circuit breaker",
                description = """
@@ -67,34 +68,36 @@ public class FallbackController {
     @RequestMapping("/fallback/{serviceId}")
     public Mono<Void> fallback(@PathVariable String serviceId, ServerWebExchange exchange) {
         if (exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR) == null) {
-            // Invocacion DIRECTA, no el forward del breaker: el forward corre
-            // sobre el exchange ya ruteado y conserva GATEWAY_ROUTE_ATTR. Sin
-            // ruta resuelta no hay destino caido que reportar — contestar 503
-            // aca permite enumerar servicios y ensucia el monitoreo con caidas
-            // falsas. Es un 404 comun, con el type comun.
-            // El serviceId del path NO se copia al cuerpo: es input crudo.
+            // DIRECT invocation, not the breaker's forward: the forward runs
+            // over the already-routed exchange and keeps GATEWAY_ROUTE_ATTR.
+            // With no resolved route there is no down destination to report —
+            // answering 503 here would allow enumerating services and would
+            // pollute monitoring with false outages. It is a plain 404, with
+            // the common type.
+            // The serviceId in the path is NOT copied to the body: it is raw
+            // input.
             return ProblemDetails.write(exchange, HttpStatus.NOT_FOUND,
-                    ErrorTypes.ROUTE_NOT_FOUND, "Ruta inexistente",
-                    "La ruta solicitada no existe.");
+                    ErrorTypes.ROUTE_NOT_FOUND, "Route not found",
+                    "The requested route does not exist.");
         }
-        String destino = destinoReal(exchange, serviceId);
+        String destination = realDestination(exchange, serviceId);
         return ProblemDetails.withRetryAfter(exchange, HttpStatus.SERVICE_UNAVAILABLE,
-                ErrorTypes.SERVICE_UNAVAILABLE, "Servicio no disponible",
-                "El servicio '" + destino + "' no esta respondiendo. Reintente en unos segundos.",
-                resiliencia.fallbackRetryAfter());
+                ErrorTypes.SERVICE_UNAVAILABLE, "Service unavailable",
+                "The service '" + destination + "' is not responding. Retry in a few seconds.",
+                resilience.fallbackRetryAfter());
     }
 
     /**
-     * El serviceId al que se iba a rutear. Nombrarlo importa: es el 503 que ve
-     * un equipo cuando su micro esta en la allowlist pero no tiene instancias
-     * arriba, y decirle "el servicio 'servicio' no responde" lo manda a buscar
-     * un servicio que no existe.
+     * The serviceId it was going to be routed to. Naming it matters: it is the
+     * 503 a team sees when its micro is on the allowlist but has no instances
+     * up, and telling them "the service 'servicio' is not responding" sends
+     * them looking for a service that does not exist.
      */
-    private String destinoReal(ServerWebExchange exchange, String fallbackDelPath) {
+    private String realDestination(ServerWebExchange exchange, String fallbackPathVariable) {
         Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
         if (route != null && route.getUri().getHost() != null) {
             return route.getUri().getHost().toLowerCase(Locale.ROOT);
         }
-        return fallbackDelPath;
+        return fallbackPathVariable;
     }
 }

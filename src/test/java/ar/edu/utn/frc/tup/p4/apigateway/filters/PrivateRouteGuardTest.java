@@ -33,39 +33,39 @@ class PrivateRouteGuardTest {
 
     private HttpStatus run(Jwt token) {
         var ex = MockServerWebExchange.from(MockServerHttpRequest.get("/api/users/me").build());
-        // Decision 3 ("Sesion en Cookies"): coherencia() ahora exige type=user
-        // por cookie. Este test no pasa por el converter real, asi que hay que
-        // marcar el canal a mano - de otro modo TODO token de persona, sin
-        // importar que tan bien formado este, se rechazaria como
-        // "persona-por-header" y estos tests dejarian de probar lo que dicen.
-        ex.getAttributes().put(CookieOrHeaderBearerConverter.ATTR_CANAL,
-                CookieOrHeaderBearerConverter.Canal.COOKIE);
-        Mono<Void> resultado = guard.filter(ex, e -> Mono.empty());
+        // Decision 3 ("Sesion en Cookies"): checkShape() now requires type=user
+        // to go by cookie. This test does not go through the real converter, so
+        // the channel has to be marked by hand - otherwise EVERY person token,
+        // no matter how well formed, would be rejected as "person-via-header"
+        // and these tests would stop testing what they say.
+        ex.getAttributes().put(CookieOrHeaderBearerConverter.ATTR_CHANNEL,
+                CookieOrHeaderBearerConverter.Channel.COOKIE);
+        Mono<Void> result = guard.filter(ex, e -> Mono.empty());
         if (token != null) {
             // Two-arg constructor: it is the ONLY one that leaves the token
             // authenticated, and it is what JwtReactiveAuthenticationManager
             // puts in the context in production. With the one-arg one the guard
             // rejects everything and the test would be checking the wrong thing.
-            resultado = resultado.contextWrite(ReactiveSecurityContextHolder
+            result = result.contextWrite(ReactiveSecurityContextHolder
                     .withAuthentication(new JwtAuthenticationToken(token, List.of())));
         }
-        StepVerifier.create(resultado).verifyComplete();
+        StepVerifier.create(result).verifyComplete();
         return (HttpStatus) ex.getResponse().getStatusCode();
     }
 
     @Test
-    void sin_Authentication_en_una_ruta_privada_corta_con_401() {
+    void no_Authentication_on_a_private_route_cuts_with_401() {
         assertThat(run(null)).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void un_type_desconocido_corta_con_401() {
+    void an_unknown_type_cuts_with_401() {
         assertThat(run(jwt().claim("type", "robot").claim("roles", List.of("X")).build()))
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void type_user_con_roles_VACIOS_corta_con_401() {
+    void type_user_with_EMPTY_roles_cuts_with_401() {
         // If it happened, X-User-Roles would go out empty and the destination
         // would have a principal with no role: neither allowed nor denied.
         assertThat(run(jwt().claim("type", "user").claim("roles", List.of()).build()))
@@ -73,30 +73,30 @@ class PrivateRouteGuardTest {
     }
 
     @Test
-    void type_service_SIN_el_rol_MS_corta_con_401() {
+    void type_service_WITHOUT_the_MS_role_cuts_with_401() {
         assertThat(run(jwt().claim("type", "service").claim("roles", List.of("STUDENT")).build()))
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void un_token_bien_formado_pasa() {
+    void a_well_formed_token_passes() {
         assertThat(run(jwt().claim("type", "user").claim("roles", List.of("STUDENT"))
                 .claim("sid", "s").claim("est", "ACTIVE").claim("pwd", false)
                 .claim("onb", false).build())).isNull();   // no status written: it continued the chain
     }
 
     @Test
-    void un_rol_de_ADMIN_no_recibe_trato_distinto_que_uno_de_ALUMNO() {
+    void an_ADMIN_role_gets_no_different_treatment_than_a_STUDENT_role() {
         // R3 - DoD criterion #11: it checks the SHAPE of the token, never the
         // role against the route. Both pass; the permission decision belongs to
         // the destination's @PreAuthorize, not here.
         Jwt admin = jwt().claim("type", "user").claim("roles", List.of("ADMIN"))
                 .claim("sid", "s").claim("est", "ACTIVE").claim("pwd", false)
                 .claim("onb", false).build();
-        Jwt alumno = jwt().claim("type", "user").claim("roles", List.of("STUDENT"))
+        Jwt student = jwt().claim("type", "user").claim("roles", List.of("STUDENT"))
                 .claim("sid", "s").claim("est", "ACTIVE").claim("pwd", false)
                 .claim("onb", false).build();
 
-        assertThat(run(admin)).isEqualTo(run(alumno)).isNull();
+        assertThat(run(admin)).isEqualTo(run(student)).isNull();
     }
 }

@@ -8,8 +8,8 @@ import org.springframework.security.oauth2.jwt.JwtClaimNames;
 
 /**
  * DEC-07 + DEC-44 - `users-service` is a LOGICAL NAME, not a URL: that is why
- * `issuer-uri` is NOT used (Spring treats it as a URL and fires OIDC discovery
- * contra ella).
+ * `issuer-uri` is NOT used (Spring treats it as a URL and runs OIDC discovery
+ * against it).
  *
  * What this validator adds over a bare JwtClaimValidator is the LOG: it names
  * the claim that failed, which turns "everything gives 401" into a grep.
@@ -27,18 +27,18 @@ public class IssuerValidator implements OAuth2TokenValidator<Jwt> {
         String iss = jwt.getClaimAsString(JwtClaimNames.ISS);
 
         if (iss == null) {
-            log.warn("JWT_RECHAZADO reason=claim-ausente claim=iss");
-            return fallo("El token no declara emisor.");
+            log.warn("JWT_REJECTED reason=claim-missing claim=iss");
+            return failure("Token does not declare an issuer.");
         }
         if (!expected.equals(iss)) {
-            log.warn("JWT_RECHAZADO reason=claim-invalido claim=iss esperado={} recibido={}",
+            log.warn("JWT_REJECTED reason=claim-invalid claim=iss expected={} received={}",
                     expected, iss);
-            return fallo("Emisor no reconocido.");
+            return failure("Unrecognized issuer.");
         }
         return OAuth2TokenValidatorResult.success();
     }
 
-    private OAuth2TokenValidatorResult fallo(String description) {
+    private OAuth2TokenValidatorResult failure(String description) {
         // The `description` does NOT name the claim: that stays in the log.
         return OAuth2TokenValidatorResult.failure(
                 new OAuth2Error("invalid_token", description, null));

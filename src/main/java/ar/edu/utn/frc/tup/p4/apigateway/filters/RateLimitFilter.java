@@ -65,8 +65,8 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         }
         // DEC-24 - the SAME type auth/ returns for its per-e-mail limit.
         return ProblemDetails.withRetryAfter(exchange, HttpStatus.TOO_MANY_REQUESTS,
-                ErrorTypes.TOO_MANY_ATTEMPTS, "Demasiados intentos",
-                "Superó el limite de solicitudes. Reintente mas tarde.",
+                ErrorTypes.TOO_MANY_ATTEMPTS, "Too many attempts",
+                "Request limit exceeded. Try again later.",
                 bucket.suggestedWait(key));
     }
 

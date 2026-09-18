@@ -44,30 +44,30 @@ public class ServiceAudienceFilter implements GlobalFilter, Ordered {
         if (route == null) {
             // Should not happen: RoutePredicateHandlerMapping sets it BEFORE the
             // GlobalFilter chain starts. If it does happen, fail closed.
-            log.error("GATEWAY_ROUTE_ATTR ausente en @Order(6) - ver PipelineOrderIT");
-            return reject(exchange, "No se pudo determinar el destino.");
+            log.error("GATEWAY_ROUTE_ATTR missing at @Order(6) - see PipelineOrderIT");
+            return reject(exchange, "Could not determine the destination.");
         }
 
-        String destino = route.getUri().getHost() == null
+        String destination = route.getUri().getHost() == null
                 ? "" : route.getUri().getHost().toLowerCase(Locale.ROOT);
         List<String> aud = jwt.getAudience();
 
         if (aud == null || aud.isEmpty()) {
-            log.warn("AUD_RECHAZADO reason=aud-ausente cliente={} destino={}",
-                    jwt.getSubject(), destino);
-            return reject(exchange, "El token de servicio no declara destino.");
+            log.warn("AUD_REJECTED reason=aud-missing client={} destination={}",
+                    jwt.getSubject(), destination);
+            return reject(exchange, "The service token does not declare a destination.");
         }
-        if (!aud.contains(destino)) {
-            log.warn("AUD_RECHAZADO reason=aud-no-coincide cliente={} aud={} destino={}",
-                    jwt.getSubject(), aud, destino);
-            return reject(exchange, "El token no fue emitido para este destino.");
+        if (!aud.contains(destination)) {
+            log.warn("AUD_REJECTED reason=aud-mismatch client={} aud={} destination={}",
+                    jwt.getSubject(), aud, destination);
+            return reject(exchange, "The token was not issued for this destination.");
         }
         return chain.filter(exchange);
     }
 
-    private Mono<Void> reject(ServerWebExchange exchange, String detalle) {
+    private Mono<Void> reject(ServerWebExchange exchange, String detail) {
         return ProblemDetails.write(exchange, HttpStatus.FORBIDDEN,
-                ErrorTypes.INVALID_AUDIENCE, "Audiencia invalida", detalle);
+                ErrorTypes.INVALID_AUDIENCE, "Invalid audience", detail);
     }
 
     @Override

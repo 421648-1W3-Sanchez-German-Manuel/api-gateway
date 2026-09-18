@@ -8,48 +8,52 @@ import org.slf4j.MDC;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * El puente que faltaba entre el contexto de Reactor y el MDC.
+ * The missing bridge between Reactor's context and the MDC.
  *
- * `CorrelationIdFilter` publica los ids del request en el CONTEXTO DE REACTOR,
- * que es lo correcto: en WebFlux un request salta de hilo y un ThreadLocal se
- * pierde. Pero `logback-spring.xml` los imprime con `%X{...}`, y `%X` lee el MDC,
- * que ES un ThreadLocal. Los dos extremos estaban bien y no habia nada en el
- * medio: cada linea de log salia con el campo vacio.
+ * `CorrelationIdFilter` publishes the request ids in the REACTOR CONTEXT,
+ * which is the right thing: in WebFlux a request hops between threads and a
+ * ThreadLocal is lost. But `logback-spring.xml` prints them with `%X{...}`,
+ * and `%X` reads the MDC, which IS a ThreadLocal. Both ends were fine and
+ * there was nothing in the middle: every log line came out with the field
+ * empty.
  *
- * El sintoma no se parecia a un bug. Los ids se generaban, viajaban al destino
- * por headers y volvian en la respuesta; lo unico que faltaba era justo donde
- * se necesita, que es el log. Se ve asi:
+ * The symptom did not look like a bug. The ids were generated, travelled to
+ * the destination by headers and came back in the response; the only thing
+ * missing was exactly where it is needed, which is the log. It looks like
+ * this:
  *
  *   [api-gateway,,,] LoggingFilter - GET /api/users/me -> 200 (9 ms)
  *
- * Tres campos vacios entre las comas. Criterio 9 del DoD: seguir un request de
- * punta a punta cruzando logs del Gateway y de un microservicio con un solo id.
- * Con el campo vacio no se puede seguir nada.
+ * Three empty fields between the commas. Criterion 9 of the DoD: following a
+ * request end to end across Gateway and microservice logs with a single id.
+ * With the field empty nothing can be followed.
  *
- * Los tres ids vienen del mismo `CorrelationIdFilter`: `requestId` (generado o
- * entrante) y `traceId`/`spanId` derivados del `traceparent` W3C — los mismos
- * valores que viajan downstream y que microservicios como users-service ponen
- * en SUS logs. Que el Gateway loguee lo mismo es lo que cierra el rastro.
+ * The three ids all come from the same `CorrelationIdFilter`: `requestId`
+ * (generated or incoming) and `traceId`/`spanId` derived from the W3C
+ * `traceparent` — the same values that travel downstream and that
+ * microservices like users-service put in THEIR logs. That the Gateway logs
+ * the same is what closes the trail.
  *
- * Como se arregla: se registra un {@link ThreadLocalAccessor} por clave, y
- * Reactor restaura el MDC alrededor de cada señal.
+ * The fix: register one {@link ThreadLocalAccessor} per key, and Reactor
+ * restores the MDC around each signal.
  *
- * El enganche de Reactor YA estaba puesto: `spring.reactor.context-propagation:
- * auto` en el application.yml, con un comentario que explica este mismo
- * problema. Lo unico que faltaba era el accessor, porque la propagacion
- * automatica solo mueve las claves que alguien registro. Los dos extremos
- * estaban bien y el del medio no existia.
+ * Reactor's hook was ALREADY set: `spring.reactor.context-propagation: auto`
+ * in the application.yml, with a comment explaining this same problem. The
+ * only thing missing was the accessor, because the automatic propagation only
+ * moves the keys that someone registered. Both ends were right and the middle
+ * one did not exist.
  */
 @Configuration
 public class CorrelationMdcConfig {
 
     @PostConstruct
-    void registrarPuente() {
-        // Idempotente: registrar dos veces la misma clave reemplaza, no duplica.
-        // Importa porque el contexto de Spring se cachea entre clases de test.
+    void registerBridge() {
+        // Idempotent: registering the same key twice replaces, does not
+        // duplicate. It matters because Spring's context is cached across test
+        // classes.
         //
-        // No hace falta llamar a Hooks.enableAutomaticContextPropagation(): lo
-        // hace Boot por `spring.reactor.context-propagation: auto`.
+        // No need to call Hooks.enableAutomaticContextPropagation(): Boot does
+        // it for `spring.reactor.context-propagation: auto`.
         ContextRegistry.getInstance().registerThreadLocalAccessor(
                 new MdcKeyAccessor(CorrelationIdFilter.CTX_REQUEST_ID));
         ContextRegistry.getInstance().registerThreadLocalAccessor(
@@ -59,38 +63,39 @@ public class CorrelationMdcConfig {
     }
 
     /**
-     * La clave del accessor tiene que ser EXACTAMENTE la misma que la del
-     * contexto de Reactor, o no se restaura nada y el sintoma es identico a no
-     * tener el puente. Por eso sale de la constante y no de un literal. Un solo
-     * accessor por clave: `requestId`, `traceId` y `spanId`, todos iguales.
+     * The accessor's key must be EXACTLY the same as the one of Reactor's
+     * context, or nothing is restored and the symptom is identical to not
+     * having the bridge. That is why it comes from the constant and not from a
+     * literal. One accessor per key: `requestId`, `traceId` and `spanId`, all
+     * the same.
      */
     static final class MdcKeyAccessor implements ThreadLocalAccessor<String> {
 
-        private final String clave;
+        private final String key;
 
-        MdcKeyAccessor(String clave) {
-            this.clave = clave;
+        MdcKeyAccessor(String key) {
+            this.key = key;
         }
 
         @Override
         public Object key() {
-            return clave;
+            return key;
         }
 
         @Override
         public String getValue() {
-            return MDC.get(clave);
+            return MDC.get(key);
         }
 
         @Override
         public void setValue(String value) {
-            MDC.put(clave, value);
+            MDC.put(key, value);
         }
 
-        /** Al salir del alcance: limpiar, o el id se filtra al request siguiente. */
+        /** Leaving the scope: clean, or the id leaks into the next request. */
         @Override
         public void setValue() {
-            MDC.remove(clave);
+            MDC.remove(key);
         }
     }
 }

@@ -16,17 +16,17 @@ import java.time.Duration;
 @Component
 public class InMemoryTokenBucket implements TokenBucket {
 
-    /** Espera maxima que se anuncia: mas alla no es un Retry-After, es un "vuelva manana". */
-    private static final Duration ESPERA_MAXIMA = Duration.ofSeconds(60);
+    /** Maximum wait that is advertised: beyond that it is not a Retry-After, it is a "come back tomorrow". */
+    private static final Duration MAX_ADVERTISED_WAIT = Duration.ofSeconds(60);
 
     private record State(double tokens, long lastNanos, int capacity, int refillPerMinute) { }
 
     /**
-     * Con EVICCION: una entrada por key (ruta|IP) que nadie limpia es una fuga
-     * lenta — cada IP distinta que alguna vez martilla una ruta cara vive para
-     * siempre. 10 min sin uso o mas de 100.000 keys y se evicta; el siguiente
-     * request arranca con el bucket lleno, que es lo correcto para una key
-     * que no se ve hace 10 minutos.
+     * With EVICTION: an entry per key (route|IP) that nobody cleans is a slow
+     * leak — every distinct IP that ever hammers an expensive route lives
+     * forever. 10 min without use or more than 100.000 keys and it is evicted;
+     * the next request starts with a full bucket, which is the right thing for
+     * a key that has not been seen in 10 minutes.
      */
     private final Cache<String, State> buckets = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(10))
@@ -52,8 +52,8 @@ public class InMemoryTokenBucket implements TokenBucket {
     }
 
     /**
-     * Cuanto falta para el proximo token, calculado del refill real — no un
-     * numero fijo. Es lo que el cliente lee en {@code Retry-After}.
+     * How long until the next token, computed from the real refill — not a
+     * fixed number. It is what the client reads in {@code Retry-After}.
      */
     @Override
     public Duration suggestedWait(String key) {
@@ -68,6 +68,6 @@ public class InMemoryTokenBucket implements TokenBucket {
             return Duration.ofSeconds(1);
         }
         long segundos = (long) Math.ceil((1 - available) / s.refillPerMinute() * 60);
-        return Duration.ofSeconds(Math.min(Math.max(segundos, 1), ESPERA_MAXIMA.toSeconds()));
+        return Duration.ofSeconds(Math.min(Math.max(segundos, 1), MAX_ADVERTISED_WAIT.toSeconds()));
     }
 }

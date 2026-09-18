@@ -8,16 +8,15 @@ import org.springframework.web.server.WebExceptionHandler;
 import reactor.core.publisher.Mono;
 
 /**
- * Todo {@code ResponseStatusException} que escapa el pipeline (ruta fuera de
- * la allowlist, metodo no permitido, ...) sale en RFC 9457 via
- * {@link GatewayProblemHandler}, no en el formato por defecto de WebFlux
- * ({@code timestamp, path, status, error} sin {@code type}).
+ * Every {@code ResponseStatusException} that escapes the pipeline (route
+ * outside the allowlist, method not allowed, ...) comes out as RFC 9457 via
+ * {@link GatewayProblemHandler}, not in WebFlux's default format
+ * ({@code timestamp, path, status, error} without {@code type}).
  *
- * <p>Solo intercepta {@code ResponseStatusException}: cualquier otro error
- * pasa al handler habitual — en particular el 503 del circuit breaker, que
- * tiene su propio camino via {@link FallbackController}.
- * {@code @Order(-2)} lo ubica antes de
- * {@code DefaultErrorWebExceptionHandler}, que esta en -1.
+ * <p>It only intercepts {@code ResponseStatusException}: every other error goes
+ * to the usual handler — in particular the circuit breaker's 503, which has
+ * its own path via {@link FallbackController}. {@code @Order(-2)} places it
+ * before {@code DefaultErrorWebExceptionHandler}, which is at -1.
  */
 @Component
 @Order(-2)

@@ -19,17 +19,17 @@ class ApiGatewayApplicationTest extends AbstractGatewayTest {
 
     @Test
     void the_stack_is_reactive_not_servlet() {
-        // spring-boot-starter-web en el classpath rompe WebFlux: dos stacks
-        // compitiendo por el mismo puerto y el Gateway no arranca.
+        // spring-boot-starter-web on the classpath breaks WebFlux: two stacks
+        // competing for the same port and the Gateway does not start.
         assertThat(ctx.getBeanNamesForType(
                 org.springframework.web.reactive.DispatcherHandler.class)).isNotEmpty();
         assertThat(ctx.containsBean("dispatcherServlet")).isFalse();
     }
 
     @Test
-    void el_cliente_de_Redis_es_REACTIVO() {
-        // Un cliente bloqueante en el filtro de Security bloquea el event loop
-        // de Netty y tira el throughput del proceso entero.
+    void the_Redis_client_is_REACTIVE() {
+        // A blocking client in the Security filter blocks Netty's event loop
+        // and kills the throughput of the whole process.
         assertThat(ctx.getBeanNamesForType(
                 org.springframework.data.redis.core.ReactiveStringRedisTemplate.class)).isNotEmpty();
     }
