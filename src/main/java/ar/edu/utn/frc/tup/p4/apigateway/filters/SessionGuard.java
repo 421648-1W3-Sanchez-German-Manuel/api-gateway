@@ -1,6 +1,7 @@
 package ar.edu.utn.frc.tup.p4.apigateway.filters;
 
 import ar.edu.utn.frc.tup.p4.apigateway.constants.ErrorTypes;
+import ar.edu.utn.frc.tup.p4.apigateway.routing.PublicRouteMatcher;
 import ar.edu.utn.frc.tup.p4.apigateway.security.SessionValidator;
 import ar.edu.utn.frc.tup.p4.apigateway.web.ProblemDetails;
 import org.springframework.core.Ordered;
@@ -29,8 +30,12 @@ import java.time.Duration;
 public class SessionGuard implements WebFilter, Ordered {
 
     private final SessionValidator validator;
+    private final PublicRouteMatcher publicRoutes;
 
-    public SessionGuard(SessionValidator validator) { this.validator = validator; }
+    public SessionGuard(SessionValidator validator, PublicRouteMatcher publicRoutes) {
+        this.validator = validator;
+        this.publicRoutes = publicRoutes;
+    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -42,7 +47,15 @@ public class SessionGuard implements WebFilter, Ordered {
         // with the header) rejects the NEW login attempt because of the OLD
         // session. Before cookies this never fired: the interceptor never sent
         // the Authorization header to a public route.
-        if (Boolean.TRUE.equals(exchange.getAttribute(PublicRouteGuard.ATTR_IS_PUBLIC))) {
+        //
+        // It asks PublicRouteMatcher DIRECTLY and does not read
+        // PublicRouteGuard.ATTR_IS_PUBLIC: that attribute is written by a
+        // GlobalFilter, and this is a WebFilter. The whole WebFilter phase runs
+        // before the first GlobalFilter, so the attribute was ALWAYS null here
+        // and this skip never fired -- the exact bug the paragraph above says it
+        // prevents. Both paths use the same matcher, so "public" keeps meaning
+        // one single thing.
+        if (publicRoutes.isPublic(exchange.getRequest().getPath().value())) {
             return chain.filter(exchange);
         }
 
