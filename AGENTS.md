@@ -69,6 +69,13 @@ prefix included.
 exists even when no instance does. A 404 would say "this endpoint does not
 exist", which is false and sends the caller looking in the wrong place.
 
+**8 · Everything is written in English, except anything shown to the user.**
+Code, identifiers, comments, commit messages, PR/issue text and docs are all in
+English. The only exception is user-facing text — UI copy, user-facing error or
+validation messages, emails — which stays in the product's target language. When
+in doubt whether a string is user-facing, treat it as internal and write it in
+English.
+
 ## Two windows worth knowing about
 
 **Session state is cached for 3 seconds.** A revoked token survives that long,
