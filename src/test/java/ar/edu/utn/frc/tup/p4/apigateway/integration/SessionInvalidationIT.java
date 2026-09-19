@@ -41,6 +41,41 @@ class SessionInvalidationIT extends AbstractGatewayTest {
                                 .endsWith("/session-superseded"));
     }
 
+    /**
+     * The mirror of the test above, and the one that was missing: the SAME
+     * superseded cookie, on a PUBLIC route, must pass.
+     *
+     * <p>The browser attaches {@code fu_at} to {@code /api/*}/public/**} merely
+     * because it shares the origin — not by the frontend's choice, as it used
+     * to be when the token travelled in a header. So the cookie of an already
+     * superseded session arrives at the very endpoint that exists to CREATE a
+     * new one, and rejecting it locks the person out of logging back in: the
+     * only way forward is the request the guard is refusing.
+     *
+     * <p>SessionGuard skips public routes for exactly that reason, but the skip
+     * read {@code PublicRouteGuard.ATTR_IS_PUBLIC} — an attribute written by a
+     * GlobalFilter, while SessionGuard is a WebFilter. The whole WebFilter phase
+     * runs before the first GlobalFilter, so it was always null and the skip
+     * never fired.
+     *
+     * <p>No unit test could catch it: the ordering only exists once the real
+     * filter chains are assembled. This one sends the cookie over HTTP through
+     * the complete pipeline, which is the only place the bug was visible.
+     */
+    @Test
+    void a_PUBLIC_route_passes_WITH_a_superseded_cookie() {
+        UUID u = UUID.randomUUID();
+        seedSession(redis, u, "sid-B");
+
+        client.post().uri("/api/users/public/auth/login")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, TokenFactory.person(u, "sid-A"))
+                .exchange()
+                // The destination answers; the gateway does not cut it. Whatever
+                // users-service replies to the login is its business — what this
+                // pins is that the request GOT there.
+                .expectStatus().isOk();
+    }
+
     @Test
     void an_ABSENT_key_gives_401_SESSION_CLOSED_not_503() {
         // DEC-01: tell the cause apart. Absent is a logout, not an outage.
