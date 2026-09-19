@@ -187,7 +187,10 @@ api-gateway/
     │   │   │
     │   │   ├── web/
     │   │   │   ├── FallbackController.java          # forward:/fallback/{serviceId} -> 503 ProblemDetail
-    │   │   │   └── GatewayErrorAttributes.java      # ProblemDetail uniforme para 401/403/404/429/503
+    │   │   │   ├── ProblemDetails.java              # the ONLY way a request is cut (RFC 9457)
+    │   │   │   ├── GatewayErrorHandler.java         # everything escaping the pipeline comes out RFC 9457
+    │   │   │   ├── GatewayProblemHandler.java       # maps ResponseStatusException -> fixed type + detail
+    │   │   │   └── SecurityProblemHandlers.java     # the two cuts of the Security chain (401/403)
     │   │   │
     │   │   └── constants/
     │   │       ├── IdentityHeaders.java             # constantes de firstNames de header
