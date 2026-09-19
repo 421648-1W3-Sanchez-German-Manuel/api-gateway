@@ -294,10 +294,17 @@ its own body is a bug.
 | `unexpected-error` | 500 | `GatewayErrorHandler` | Anything that escapes the pipeline. The stack trace goes to the log, never to the body. |
 | `service-unavailable` | 503 | `SessionGuard` / `BulkheadFilter` / fallback | Redis, saturation or a down destination. Carries `Retry-After` — **retry, never send to login**. |
 
-Three things worth knowing:
+Four things worth knowing:
 
 - An exception's own message is **never** copied into the body. Only the `type`
   and a fixed, sanitized `detail`.
+- **A client that hung up produces no response and no `ERROR`.** A browser
+  navigating away mid-request or a dropped mobile connection is routine under
+  load, not a gateway failure: it is logged at `DEBUG` as `CLIENT_DISCONNECTED`
+  and nothing is written, because there is nobody left to answer. The check is
+  the framework's own (`DisconnectedClientHelper`), the same one WebFlux uses
+  for its `DisconnectedClient` category. So an `UNEXPECTED_ERROR` in the log
+  always means a real failure — that is what makes it worth alerting on.
 - `instance` is the path the client asked for, not the one being served. When
   the breaker forwards to `/fallback/servicio`, the client still sees its own
   path.
