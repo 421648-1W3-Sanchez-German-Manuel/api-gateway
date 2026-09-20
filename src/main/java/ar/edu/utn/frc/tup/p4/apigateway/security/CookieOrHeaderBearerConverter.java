@@ -1,5 +1,6 @@
 package ar.edu.utn.frc.tup.p4.apigateway.security;
 
+import ar.edu.utn.frc.tup.p4.apigateway.routing.PublicRouteMatcher;
 import org.springframework.http.HttpCookie;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
@@ -40,8 +41,45 @@ public class CookieOrHeaderBearerConverter implements ServerAuthenticationConver
     private final ServerBearerTokenAuthenticationConverter headerConverter =
             new ServerBearerTokenAuthenticationConverter();
 
+    private final PublicRouteMatcher publicRoutes;
+
+    public CookieOrHeaderBearerConverter(PublicRouteMatcher publicRoutes) {
+        this.publicRoutes = publicRoutes;
+    }
+
     @Override
     public Mono<Authentication> convert(ServerWebExchange exchange) {
+        // A public route never authenticates, so it must not try to DECODE
+        // either: extracting a token here is what makes the request fail.
+        //
+        // permitAll is an AUTHORIZATION rule, and the AuthenticationWebFilter
+        // that oauth2ResourceServer installs runs before it and knows nothing
+        // about it: whatever this converter returns gets decoded, and a cookie
+        // that fails signature or exp cuts the exchange with a 401 through the
+        // authenticationEntryPoint -- on a route that needed no token at all.
+        //
+        // SessionGuard already skips public routes, with a comment describing
+        // this same class of bug, but that skip only covers the SESSION layer
+        // (sid against Redis). The decoder is EARLIER and was left uncovered.
+        //
+        // The trap it closed on: fu_at has Path=/, so the browser attaches it
+        // to /refresh and to /login. The frontend reacts to not-authenticated
+        // by clearing the session and navigating to /login, which receives the
+        // same cookie and answers 401 again -- no way out but deleting cookies
+        // by hand. It fires whenever a token stops being valid BEFORE the
+        // cookie expires: key rotation, or a browser clock more than the 60 s
+        // of JwtTimestampValidator behind.
+        //
+        // Nothing downstream loses anything: PrivateRouteGuard is the only
+        // filter that publishes the Jwt (ATTR_JWT) and it skips public routes,
+        // so no guard was reading it here anyway.
+        //
+        // It asks PublicRouteMatcher, the same one SecurityConfig and
+        // SessionGuard use, so "public" keeps meaning one single thing.
+        if (publicRoutes.isPublic(exchange.getRequest().getPath().value())) {
+            return Mono.empty();
+        }
+
         return headerConverter.convert(exchange)
                 .doOnNext(auth -> exchange.getAttributes().put(ATTR_CHANNEL, Channel.HEADER))
                 .switchIfEmpty(Mono.defer(() -> fromCookie(exchange)));

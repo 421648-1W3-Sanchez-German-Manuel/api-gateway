@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 
+import java.time.Instant;
+import java.util.Date;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,5 +75,56 @@ class CookieAuthenticationIT extends AbstractGatewayTest {
         var received = lastRequestToDestination();
         assertThat(received.getHeader(IdentityHeaders.PRINCIPAL_TYPE)).isEqualTo("service");
         assertThat(received.getHeader(IdentityHeaders.SERVICE_ID)).isEqualTo("cursos-service");
+    }
+
+    /**
+     * A PUBLIC route must work even when the browser attaches a fu_at the
+     * decoder cannot accept.
+     *
+     * SessionGuard already skips public routes for this exact reason, but that
+     * only covers the SESSION layer. The decoder runs EARLIER: the
+     * AuthenticationWebFilter that oauth2ResourceServer installs is not aware
+     * of permitAll, so a cookie that fails signature or exp used to cut the
+     * request with a 401 before the public route ran at all.
+     *
+     * The trap that closes: fu_at has Path=/, so it travels to /refresh AND to
+     * /login. The frontend reacts to not-authenticated by clearing the session
+     * and navigating to /login -- which receives the same cookie and answers
+     * 401 again. The person cannot get out without deleting cookies by hand.
+     * It fires on key rotation and on a browser clock more than 60 s behind.
+     */
+    @Test
+    void a_public_route_works_with_an_EXPIRED_cookie() {
+        String expired = TokenFactory.person(UUID.randomUUID(), "sid-expired",
+                b -> b.expirationTime(Date.from(Instant.now().minusSeconds(3600)))
+                      .issueTime(Date.from(Instant.now().minusSeconds(7200))));
+
+        client.post().uri("/api/users/public/auth/refresh")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, expired)
+                .exchange().expectStatus().isOk();
+    }
+
+    /** Same case, with a value that is not even a JWT: a truncated cookie. */
+    @Test
+    void a_public_route_works_with_a_GARBAGE_cookie() {
+        client.post().uri("/api/users/public/auth/refresh")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, "not-a-jwt")
+                .exchange().expectStatus().isOk();
+    }
+
+    /**
+     * The other half of the same change: skipping the converter on a public
+     * route must NOT leak into the private ones, where an invalid cookie has to
+     * keep answering 401.
+     */
+    @Test
+    void a_PRIVATE_route_still_rejects_an_EXPIRED_cookie() {
+        String expired = TokenFactory.person(UUID.randomUUID(), "sid-expired",
+                b -> b.expirationTime(Date.from(Instant.now().minusSeconds(3600)))
+                      .issueTime(Date.from(Instant.now().minusSeconds(7200))));
+
+        client.get().uri("/api/users/me")
+                .cookie(CookieOrHeaderBearerConverter.ACCESS_COOKIE, expired)
+                .exchange().expectStatus().isUnauthorized();
     }
 }

@@ -59,6 +59,57 @@ class RateLimitForwardedIT extends AbstractGatewayTest {
                         assertThat((String) t).endsWith("/too-many-attempts"));
     }
 
+    /**
+     * THE hostile case, and the one the two tests above do not cover: they send
+     * an X-Forwarded-For the way a well-behaved proxy would, which is the path
+     * that already worked.
+     *
+     * What nginx really puts on the wire is BOTH headers, and they are not
+     * equally trustworthy:
+     *
+     *   X-Real-IP        $remote_addr              -> SET: overwrites whatever
+     *                                                the client sent.
+     *   X-Forwarded-For  $proxy_add_x_forwarded_for -> APPENDS: the client's
+     *                                                value survives, FIRST.
+     *
+     * So reading X-Forwarded-For[0] reads a value the client chose. A different
+     * invented value per request bought a fresh bucket every time and the limit
+     * stopped existing -- on the one route whose only protection it is
+     * (/registration/**, which sends mail unauthenticated).
+     */
+    @Test
+    void an_INVENTED_X_Forwarded_For_does_NOT_buy_a_new_bucket() {
+        for (int i = 0; i < 3; i++) {
+            client.post().uri("/api/users/public/auth/login")
+                    .header("X-Real-IP", "203.0.113.40")
+                    .header("X-Forwarded-For", "198.51.100." + i + ", 203.0.113.40")
+                    .exchange().expectStatus().isOk();
+        }
+        // A fourth invented IP: it is the SAME client and the budget is spent.
+        client.post().uri("/api/users/public/auth/login")
+                .header("X-Real-IP", "203.0.113.40")
+                .header("X-Forwarded-For", "198.51.100.99, 203.0.113.40")
+                .exchange().expectStatus().isEqualTo(429);
+    }
+
+    /**
+     * Without X-Real-IP the chain is still read from the RIGHT, skipping hops
+     * that are trusted proxies: the rightmost non-trusted entry is the one the
+     * nearest proxy actually observed, and it is the only one no client can
+     * choose. Everything to its left is hearsay.
+     */
+    @Test
+    void without_X_Real_IP_the_client_is_taken_from_the_RIGHT_of_the_chain() {
+        for (int i = 0; i < 3; i++) {
+            client.post().uri("/api/users/public/auth/login")
+                    .header("X-Forwarded-For", "198.51.100." + i + ", 203.0.113.60")
+                    .exchange().expectStatus().isOk();
+        }
+        client.post().uri("/api/users/public/auth/login")
+                .header("X-Forwarded-For", "198.51.100.99, 203.0.113.60")
+                .exchange().expectStatus().isEqualTo(429);
+    }
+
     @Test
     void a_route_NOT_in_expensive_routes_is_NOT_limited() {
         // The filter is a no-op off the list: we do not want to limit everything.
