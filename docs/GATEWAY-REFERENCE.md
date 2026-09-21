@@ -45,10 +45,9 @@ Two different orderings are in play, and they are not interchangeable:
 | 7 | `AccountStateGuard` | `GlobalFilter` @ 50 | Coarse account-state gate (`est`, `pwd`, `onb`). |
 | 8 | `ServiceAudienceFilter` | `GlobalFilter` @ 60 | `aud` of a service token vs the resolved destination. |
 | 9 | `IdentityPropagationFilter` | `GlobalFilter` @ 70 | Strips the five reserved headers, injects the derived ones. |
-| 10 | `InterMicroTraceFilter` | `GlobalFilter` @ 75 | Dev-only trace into Redis. Best effort, never blocks. |
-| 11 | `RateLimitFilter` | `GlobalFilter` @ 80 | Token bucket on the configured expensive routes. |
-| 12 | `BulkheadFilter` | `GlobalFilter` @ 90 | One semaphore per destination service. |
-| 13 | `Retry` → `CircuitBreaker` | route filters | `default-filters`: retry (GET only) inside the breaker; fallback to `/fallback/servicio`. |
+| 10 | `RateLimitFilter` | `GlobalFilter` @ 80 | Token bucket on the configured expensive routes. |
+| 11 | `BulkheadFilter` | `GlobalFilter` @ 90 | One semaphore per destination service. |
+| 12 | `Retry` → `CircuitBreaker` | route filters | `default-filters`: retry (GET only) inside the breaker; fallback to `/fallback/servicio`. |
 
 Facts that are part of the contract, not implementation detail:
 
@@ -146,7 +145,7 @@ management port.
 is one environment variable on the gateway's container:
 
 ```
-GATEWAY_ALLOWLIST=users-service,echo-service,cursos-service
+GATEWAY_ALLOWLIST=users-service,cursos-service
 ```
 
 It replaces the whole list and requires a gateway restart — never hot.
@@ -328,7 +327,7 @@ Everything below is read at startup. Nothing is hot-reloadable.
 
 | Variable | Property | Default |
 |---|---|---|
-| `GATEWAY_ALLOWLIST` | `gateway.routing.allowlist` | `users-service,echo-service` |
+| `GATEWAY_ALLOWLIST` | `gateway.routing.allowlist` | `users-service` |
 | — | `gateway.routing.service-id-suffix` | `-service` |
 | — | `gateway.routing.path-prefix` | `/api` |
 | — | `gateway.jwt.expected-issuer` | `users-service` |
@@ -410,9 +409,6 @@ fine — the YAML loader is what fails to decode it.
 - **Sampling is 1.0.** At the default 10% nine out of ten requests come out with
   no `traceId`.
 - **Never logged:** bodies, tokens, `Authorization`, client secrets.
-- **Dev mailbox:** `InterMicroTraceFilter` pushes the last 200 routed calls into
-  the Redis list `intermicro:trace` (origin `PERSON`/`MS`/`ANON`, actor,
-  destination, status, ms). Development only, fire-and-forget.
 - **Metrics:** `/actuator/prometheus` on the management port.
 - **API reference for the whole subsystem:** `http://localhost:3000/api/docs/ui`.
 

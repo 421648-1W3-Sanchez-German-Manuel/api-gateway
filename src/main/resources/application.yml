@@ -121,7 +121,7 @@ gateway:
     # La lista se sobreescribe entera con GATEWAY_ALLOWLIST (separada por comas)
     # para que dar de alta un equipo sea una linea del compose y no un PR a este
     # repo. Sigue necesitando reiniciar el gateway; nunca es en caliente.
-    allowlist: ${GATEWAY_ALLOWLIST:users-service,echo-service}
+    allowlist: ${GATEWAY_ALLOWLIST:users-service}
     service-id-suffix: "-service"
     path-prefix: "/api"
 
