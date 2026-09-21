@@ -147,9 +147,6 @@ ok "JWKS servido"                  200 "$(status GET /.well-known/jwks.json)"
 curl -sf --max-time 3 http://localhost:8082/actuator/health >/dev/null 2>&1 \
   && ok "users-service inalcanzable" "cerrado" "abierto" \
   || ok "users-service inalcanzable" "cerrado" "cerrado"
-curl -sf --max-time 3 http://localhost:8084/actuator/health >/dev/null 2>&1 \
-  && ok "echo-service inalcanzable"  "cerrado" "abierto" \
-  || ok "echo-service inalcanzable"  "cerrado" "cerrado"
 if ! curl -sf --max-time 3 "$DEV/dev/mocks" >/dev/null 2>&1; then
   echo "  ⚠ el dev-server del front no responde en $DEV: sin él no hay codigos ni enlaces."
   exit 1
@@ -224,8 +221,7 @@ okc "el alumno queda PENDING_COURSE" "PENDING_COURSE" "$ME"
 # --- 3 · los gates ---------------------------------------------------------
 
 sec "3 · Gates de cuenta"
-okc "cuenta pendiente NO alcanza otro micro" "pending-account" \
-  "$(tipo "$(body GET /api/echo/quien-soy "" "$JAR")")"
+skip "cuenta pendiente NO alcanza otro micro" "requiere un segundo micro fuera del subsistema"
 ok  "cuenta pendiente SI alcanza /me" 200 "$(status GET /api/users/me "" "$JAR")"
 
 # --- 4 · sesión: refresh, rotación, única -----------------------------------
@@ -299,10 +295,10 @@ else
 fi
 
 
-# --- 6 · integración con echo-service --------------------------------------
+# --- 6 · integración micro-a-micro -----------------------------------------
 
-sec "6 · Integración de tres servicios"
-skip "checks de echo con este alumno" "requiere cuenta ACTIVE (ver seccion 8)"
+sec "6 · Integración micro-a-micro"
+skip "identidad hacia un segundo micro" "requiere un segundo micro fuera del subsistema"
 
 # --- 7 · reset de password --------------------------------------------------
 
@@ -363,21 +359,8 @@ else
   okc "id que no es UUID -> validation" "validation" \
     "$(tipo "$(body PATCH /api/users/no-es-uuid/role '{"role":"STUDENT"}' "$PJAR")")"
 
-  # --- integración de tres servicios, con una cuenta habilitada ---
-  QS=$(body GET /api/echo/quien-soy "" "$PJAR")
-  okc "la identidad llega a otro micro"     "X-User-Id"        "$QS"
-  okc "  con el role correcto"               "PROFESSOR"         "$QS"
-  okc "  y sin headers de servicio"         "\"X-Service-Id\":null" "$QS"
-  PID=$(json "$(body GET /api/users/me "" "$PJAR")" id)
-  CP=$(body GET "/api/echo/cliente/perfil/$PID" "" "$PJAR")
-  okc "ciclo micro-micro: token de servicio" "obtenido"        "$CP"
-  if [[ "$CP" == *"\"email\""* ]]; then
-    ok "  el perfil publico NO expone email" "reducido" "expone email"
-  else
-    ok "  el perfil publico NO expone email" "reducido" "reducido"
-  fi
-  okc "el aud contiene el dano"              "RECHAZADO"       "$(body GET /api/echo/cliente/probar-aud-cruzado "" "$PJAR")"
-  ok  "ruta interna con token de persona"    401 "$(status GET /api/echo/interno "" "$PJAR")"
+  # --- integración micro-a-micro, con una cuenta habilitada ---
+  skip "identidad, aud y ciclo micro-a-micro" "requiere un segundo micro fuera del subsistema"
 
   # --- el deadlock de gates (RF-USR-01) ---
   ADM2="admin2.$STAMP@demo.utn.edu.ar"
