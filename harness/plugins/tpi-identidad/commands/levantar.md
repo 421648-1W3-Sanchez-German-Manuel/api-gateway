@@ -57,10 +57,10 @@ un bug y ninguno lo es:
 
 ## Lo que NO se hace para debuggear
 
-**No publiques los puertos de los micros.** `users-service` y `echo-service` no
-tienen `ports:` a propósito: no validan el JWT, confían en los headers `X-*`
-porque nadie puede alcanzarlos sin pasar por el Gateway. Con el 8082 publicado,
-esto funciona sin password, sin token y sin 2FA:
+**No publiques los puertos de los micros.** `users-service` no tiene `ports:` a
+propósito: no valida el JWT, confía en los headers `X-*` porque nadie puede
+alcanzarlo sin pasar por el Gateway. Con el 8082 publicado, esto funciona sin
+password, sin token y sin 2FA:
 
 ```bash
 curl -X DELETE http://localhost:8082/api/users/{id} -H "X-User-Roles: ADMIN"
